@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LP Tracker — Uniswap · Aerodrome · Orca</title>
+<link rel="stylesheet" href="styles.css" />
+<link rel="preconnect" href="https://api.coingecko.com" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-eyebrow">LP TRACKER</div>
+    <div class="brand-title">CLP <span>Tracker</span></div>
+    <div class="brand-sub">Uniswap · Aerodrome · Orca — Profit &amp; Loss Toolkit</div>
+  </div>
+  <div class="topbar-actions">
+    <button id="btn-refresh" class="btn btn-ghost"><span class="ico">⟳</span> REFRESH PRICES</button>
+    <button id="btn-csv"     class="btn btn-ghost"><span class="ico">▤</span> CSV</button>
+    <button id="btn-excel"   class="btn btn-ghost"><span class="ico">▦</span> EXCEL</button>
+    <button id="btn-pdf"     class="btn btn-ghost"><span class="ico">⎙</span> PDF</button>
+    <button id="btn-import"  class="btn btn-import"><span class="ico">⇪</span> IMPORT</button>
+    <button id="btn-add"     class="btn btn-primary"><span class="ico">＋</span> ADD POSITION</button>
+    <input id="file-import" type="file" accept=".csv,application/json" hidden />
+  </div>
+</header>
+
+<section class="cards">
+  <div class="card card-active">
+    <div class="card-h"><span class="dot dot-green"></span> ACTIVE TOTALS</div>
+    <div class="card-grid">
+      <div><div class="lbl">POSITIONS</div><div class="val" id="a-positions">0</div></div>
+      <div><div class="lbl">DEPOSITED</div><div class="val" id="a-deposited">$0.00</div></div>
+      <div><div class="lbl">CURRENT VALUE</div><div class="val" id="a-current">$0.00</div></div>
+      <div><div class="lbl">TOTAL FEES</div><div class="val val-green" id="a-fees">$0.00</div></div>
+      <div><div class="lbl">NET PROFIT</div><div class="val val-green" id="a-profit">$0.00</div></div>
+      <div><div class="lbl">AVG APR</div><div class="val val-green" id="a-apr">0.00%</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-h"><span class="ico-mini">▤</span> CLOSED TOTALS</div>
+    <div class="card-grid">
+      <div><div class="lbl">POSITIONS</div><div class="val" id="c-positions">0</div></div>
+      <div><div class="lbl">TOTAL DEPLOYED</div><div class="val" id="c-deployed">$0.00</div></div>
+      <div><div class="lbl">FEES EARNED</div><div class="val val-green" id="c-fees">$0.00</div></div>
+      <div><div class="lbl">TOTAL PROFIT</div><div class="val" id="c-profit">$0.00</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-h"><span class="ico-mini">📅</span> MONTHLY ESTIMATE</div>
+    <div class="card-grid">
+      <div><div class="lbl">PROJECTED MONTHLY FEES</div><div class="val val-green" id="m-fees">$0.00</div></div>
+      <div><div class="lbl">DAILY AVG FEES</div><div class="val val-green" id="m-daily">$0.00</div></div>
+      <div><div class="lbl">ACTIVE ADF SUM</div><div class="val val-green" id="m-adf">$0.00/d</div></div>
+    </div>
+  </div>
+
+  <div class="card card-portfolio">
+    <div class="card-h"><span class="ico-mini">◔</span> PORTFOLIO TOTAL</div>
+    <div class="card-grid card-grid-3">
+      <div><div class="lbl">TOTAL DEPOSITED</div><div class="val" id="p-deposited">$0.00</div></div>
+      <div><div class="lbl">TOTAL VALUE</div><div class="val" id="p-value">$0.00</div></div>
+      <div><div class="lbl">PRICE DIFF $</div><div class="val" id="p-diff">$0.00</div></div>
+      <div><div class="lbl">ALL FEES</div><div class="val val-green" id="p-fees">$0.00</div></div>
+      <div><div class="lbl">TOTAL PROFIT</div><div class="val" id="p-profit">$0.00</div></div>
+      <div><div class="lbl">WTD AVG APR</div><div class="val val-green" id="p-apr">0.00%</div></div>
+      <div><div class="lbl">TOTAL SCALPS</div><div class="val val-green" id="p-scalps">$0.00</div></div>
+      <div><div class="lbl">MONTHLY EST.</div><div class="val val-green" id="p-monthly">$0.00</div></div>
+    </div>
+  </div>
+</section>
+
+<section class="positions-wrap">
+  <div class="positions-h">
+    <h2>Active Positions <span class="count" id="active-count">0</span></h2>
+    <div class="sort-wrap">
+      <label>Sort:</label>
+      <select id="sort-active">
+        <option value="oldest">Oldest First</option>
+        <option value="newest">Newest First</option>
+        <option value="profit">Most Profitable</option>
+        <option value="apr">Highest APR</option>
+      </select>
+    </div>
+  </div>
+  <div id="active-list" class="position-list"></div>
+</section>
+
+<section class="positions-wrap">
+  <div class="positions-h">
+    <h2>Closed Positions <span class="count" id="closed-count">0</span></h2>
+    <div class="sort-wrap">
+      <label>Sort:</label>
+      <select id="sort-closed">
+        <option value="newest">Newest First</option>
+        <option value="oldest">Oldest First</option>
+        <option value="profit">Most Profitable</option>
+      </select>
+    </div>
+  </div>
+  <div id="closed-list" class="position-list"></div>
+</section>
+
+<!-- ADD / EDIT MODAL -->
+<div class="modal-back" id="modal-back" hidden>
+  <div class="modal">
+    <div class="modal-h">
+      <h3 id="modal-title">Add Position</h3>
+      <button class="modal-x" id="modal-close">×</button>
+    </div>
+    <form id="position-form" class="form-grid">
+      <input type="hidden" id="f-id" />
+      <div class="row">
+        <label>PAIR
+          <input type="text" id="f-pair" placeholder="e.g. USDC/cbBTC CL100" required />
+        </label>
+        <label>PROTOCOL
+          <select id="f-protocol">
+            <option>Uniswap</option>
+            <option>Aerodrome</option>
+            <option>Orca</option>
+            <option>Other</option>
+          </select>
+        </label>
+        <label>CHAIN
+          <select id="f-chain">
+            <option>Base</option>
+            <option>Ethereum</option>
+            <option>Arbitrum</option>
+            <option>Optimism</option>
+            <option>Polygon</option>
+            <option>Solana</option>
+          </select>
+        </label>
+      </div>
+      <div class="row">
+        <label>ENTRY DATETIME
+          <input type="datetime-local" id="f-entry" required />
+        </label>
+        <label>EXIT DATETIME (leave blank if active)
+          <input type="datetime-local" id="f-exit" />
+        </label>
+        <label>DEPOSITED ($)
+          <input type="number" step="any" id="f-deposited" placeholder="0.00" required />
+        </label>
+      </div>
+      <div class="row">
+        <label>BOTTOM RANGE
+          <input type="number" step="any" id="f-bottom" placeholder="0" />
+        </label>
+        <label>TOP RANGE
+          <input type="number" step="any" id="f-top" placeholder="0" />
+        </label>
+        <label>CURRENT BALANCE ($)
+          <input type="number" step="any" id="f-balance" placeholder="0.00" />
+        </label>
+      </div>
+      <div class="row">
+        <label>TOKEN 1 SYMBOL
+          <input type="text" id="f-tok1-sym" placeholder="USDC" />
+        </label>
+        <label>TOKEN 1 COUNT
+          <input type="number" step="any" id="f-tok1" placeholder="0" />
+        </label>
+        <label>TOKEN 1 PRICE ($)
+          <input type="number" step="any" id="f-tok1-px" placeholder="auto / 1 for stable" />
+        </label>
+      </div>
+      <div class="row">
+        <label>TOKEN 2 SYMBOL
+          <input type="text" id="f-tok2-sym" placeholder="cbBTC" />
+        </label>
+        <label>TOKEN 2 COUNT
+          <input type="number" step="any" id="f-tok2" placeholder="0" />
+        </label>
+        <label>TOKEN 2 PRICE ($)
+          <input type="number" step="any" id="f-tok2-px" placeholder="auto / 1 for stable" />
+        </label>
+      </div>
+      <div class="row">
+        <label>NEW (UNCLAIMED) FEES ($)
+          <input type="number" step="any" id="f-fees-new" placeholder="0.00" />
+        </label>
+        <label>CLAIMED FEES ($)
+          <input type="number" step="any" id="f-fees-claim" placeholder="0.00" />
+        </label>
+        <label>SWAP FEES PAID ($)
+          <input type="number" step="any" id="f-fees-swap" placeholder="0.00" />
+        </label>
+      </div>
+      <div class="row">
+        <label>SCALP ($)
+          <input type="number" step="any" id="f-scalp" placeholder="0.00" />
+        </label>
+        <label class="span2">NOTES
+          <textarea id="f-notes" rows="2" placeholder="Notes…"></textarea>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="modal-cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Position</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
