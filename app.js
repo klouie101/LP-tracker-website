@@ -33,7 +33,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Always start with the modal closed, no matter what.
   closeModal();
   bindUI();
-  if (positions.length === 0) seedExample();
   render();
   // background refresh on load (silent)
   refreshAllPrices(true).catch(()=>{});
@@ -254,7 +253,19 @@ function renderList(kind) {
     return 0;
   });
 
-  listEl.innerHTML = items.map(p => positionCard(p, kind)).join('');
+  if (items.length === 0) {
+    listEl.innerHTML = `
+      <div class="empty-state">
+        ${kind === 'active'
+          ? `<div class="empty-title">No active positions yet</div>
+             <div class="empty-sub">Click <strong>+ ADD POSITION</strong> in the top right to add your first liquidity pool.</div>`
+          : `<div class="empty-title">No closed positions yet</div>
+             <div class="empty-sub">When you close an active position it will show up here.</div>`
+        }
+      </div>`;
+  } else {
+    listEl.innerHTML = items.map(p => positionCard(p, kind)).join('');
+  }
 
   // wire up handlers
   listEl.querySelectorAll('.position').forEach(node => {
