@@ -236,14 +236,15 @@ function renderTotals() {
   setColored('#m-adf', adf, v => money(v) + '/d');
 
   // PORTFOLIO
+  const cCur = sum(closed, p => computeCurrentValue(p)); // user's recorded balance at close
   const pDep = aDep + cDep;
-  const pVal = aCur + cDep + cProf - cFees; // closed positions: terminal "value" ~ deployed + (profit - fees)
+  const pVal = aCur + cCur;          // total $ across active + closed (closed = exit value)
   const pFees = aFees + cFees;
   const pProf = aProf + cProf;
   const pScalp = sum(positions, p => p.scalp);
-  const pDiff = pVal - pDep - pFees;
+  const pDiff = pVal - pDep - pFees; // capital gain/loss vs. principal, excluding fees
   $('#p-deposited').textContent = money(pDep);
-  $('#p-value').textContent     = money(aCur + cDep);
+  $('#p-value').textContent     = money(pVal);
   setColored('#p-diff', pDiff, money);
   setColored('#p-fees', pFees, money);
   setColored('#p-profit', pProf, money);
@@ -317,6 +318,8 @@ function positionCard(p, kind) {
   const profit = computeProfit(p);
   const cv = computeCurrentValue(p);
   const out = !p.exit && isOutOfRange(p);
+  // Sanity flag: current value is more than 5x deposited — likely a data entry error.
+  const suspicious = (Number(p.deposited) > 0) && (cv > p.deposited * 5);
   const t1px = tokenPrice(p.tok1);
   const t2px = tokenPrice(p.tok2);
   const t1stable = STABLES.has((p.tok1.sym||'').toUpperCase());
@@ -338,6 +341,7 @@ function positionCard(p, kind) {
               ? `<span class="badge badge-outrange">⚠ Out of Range</span>`
               : (p.bottom && p.top && t2px ? `<span class="badge badge-inrange">In Range</span>` : '')
             ) : ''}
+          ${suspicious ? `<span class="badge badge-outrange" title="Current value is more than 5× deposited — likely a typo. Click ✎ to edit.">⚠ Check Numbers</span>` : ''}
         </span>
       </div>
       <div></div>
