@@ -9,18 +9,43 @@ const PRICE_CACHE_KEY = 'lp-tracker.priceCache.v1';
 
 // ---------- Token symbol → CoinGecko id map ----------
 const TOKEN_IDS = {
-  'BTC': 'bitcoin', 'WBTC': 'wrapped-bitcoin', 'CBBTC': 'coinbase-wrapped-btc',
+  // Bitcoin
+  'BTC': 'bitcoin', 'WBTC': 'wrapped-bitcoin', 'CBBTC': 'coinbase-wrapped-btc', 'TBTC': 'tbtc',
+  // Ethereum + LSTs
   'ETH': 'ethereum', 'WETH': 'weth', 'CBETH': 'coinbase-wrapped-staked-eth',
-  'SOL': 'solana', 'WSOL': 'wrapped-solana',
+  'STETH': 'staked-ether', 'WSTETH': 'wrapped-steth', 'RETH': 'rocket-pool-eth',
+  'WEETH': 'wrapped-eeth', 'EZETH': 'renzo-restaked-eth',
+  // Solana + LSTs
+  'SOL': 'solana', 'WSOL': 'wrapped-solana', 'JITOSOL': 'jito-staked-sol',
+  'MSOL': 'msol', 'BSOL': 'blazestake-staked-sol', 'INF': 'sanctum-infinity',
+  // L2s & ecosystem
   'ARB': 'arbitrum', 'OP': 'optimism', 'MATIC': 'matic-network', 'POL': 'polygon-ecosystem-token',
-  'BASE': 'base-protocol',
-  'AERO': 'aerodrome-finance',
-  'UNI': 'uniswap', 'ORCA': 'orca',
-  'LINK': 'chainlink', 'AAVE': 'aave', 'CRV': 'curve-dao-token',
+  'AVAX': 'avalanche-2', 'BNB': 'binancecoin', 'BLAST': 'blast',
+  // DEX tokens
+  'AERO': 'aerodrome-finance', 'UNI': 'uniswap', 'ORCA': 'orca',
+  'CAKE': 'pancakeswap-token', 'SUSHI': 'sushi', 'CRV': 'curve-dao-token', 'BAL': 'balancer',
+  // DeFi blue chips
+  'LINK': 'chainlink', 'AAVE': 'aave', 'COMP': 'compound-governance-token',
+  'MKR': 'maker', 'SNX': 'havven', 'GMX': 'gmx', 'PENDLE': 'pendle',
+  'LDO': 'lido-dao', 'RPL': 'rocket-pool',
+  // Solana DeFi
   'JUP': 'jupiter-exchange-solana', 'JTO': 'jito-governance-token',
-  'BONK': 'bonk', 'WIF': 'dogwifcoin', 'PYTH': 'pyth-network',
+  'PYTH': 'pyth-network', 'KMNO': 'kamino', 'DRIFT': 'drift-protocol',
+  'RAY': 'raydium', 'WHIRL': 'orca',
+  // Memes
+  'BONK': 'bonk', 'WIF': 'dogwifcoin', 'POPCAT': 'popcat',
+  'PEPE': 'pepe', 'DOGE': 'dogecoin', 'SHIB': 'shiba-inu', 'BRETT': 'based-brett',
+  'DEGEN': 'degen-base', 'TOSHI': 'toshi',
+  // Other notable
+  'TIA': 'celestia', 'INJ': 'injective-protocol', 'SUI': 'sui',
+  'APT': 'aptos', 'ATOM': 'cosmos', 'NEAR': 'near', 'FTM': 'fantom',
+  'MOG': 'mog-coin', 'VIRTUAL': 'virtual-protocol',
 };
-const STABLES = new Set(['USDC','USDT','DAI','USDE','PYUSD','FRAX','USDBC','USDS','USDC.E']);
+const STABLES = new Set([
+  'USDC','USDT','DAI','USDE','PYUSD','FRAX','USDBC','USDS','USDC.E',
+  'AUSD','SUSDS','GUSD','TUSD','LUSD','CRVUSD','USDD','BUSD',
+  'FDUSD','USDX','USDP','USR','DEUSD','USYC','USDM'
+]);
 
 // ---------- State ----------
 let positions = loadPositions();
@@ -131,13 +156,11 @@ function tokenPrice(t) {
   return 0;
 }
 function computeCurrentValue(p) {
-  // Prefer manual balance if user set it; else compute from token amounts × prices
-  if (typeof p.balance === 'number' && p.balance > 0) {
-    // refresh balance from tokens if we have non-stable token prices live
-    const live = (p.tok1.count||0) * tokenPrice(p.tok1) + (p.tok2.count||0) * tokenPrice(p.tok2);
-    return live > 0 ? live : p.balance;
-  }
-  return (p.tok1.count||0) * tokenPrice(p.tok1) + (p.tok2.count||0) * tokenPrice(p.tok2);
+  // 1. If user entered Current Balance ($) directly, ALWAYS trust it.
+  //    Most LP dashboards (Aerodrome, Orca, Uniswap) show a USD value — copy that in.
+  if (typeof p.balance === 'number' && p.balance > 0) return p.balance;
+  // 2. Otherwise compute from token amounts × prices.
+  return (Number(p.tok1?.count)||0) * tokenPrice(p.tok1) + (Number(p.tok2?.count)||0) * tokenPrice(p.tok2);
 }
 function computeFees(p) {
   return (Number(p.feesNew)||0) + (Number(p.feesClaim)||0) - (Number(p.feesSwap)||0);
