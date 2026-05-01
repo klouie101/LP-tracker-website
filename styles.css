@@ -354,16 +354,17 @@ body {
 
 /* ===== Modal ===== */
 .modal-back {
+  display: none;
   position: fixed;
   inset: 0;
   background: rgba(2,4,8,.7);
-  display: flex;
   align-items: flex-start;
   justify-content: center;
   padding: 60px 16px;
-  z-index: 50;
+  z-index: 9999;
   overflow: auto;
 }
+.modal-back.is-open { display: flex !important; }
 .modal-back[hidden] { display: none !important; }
 .modal {
   background: var(--panel);

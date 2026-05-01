@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>LP Tracker — Uniswap · Aerodrome · Orca</title>
-<link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="styles.css?v=4" />
 <link id="theme-link" rel="stylesheet" href="" />
 <link rel="preconnect" href="https://api.coingecko.com" />
 <script>
@@ -121,11 +121,11 @@
 </section>
 
 <!-- ADD / EDIT MODAL -->
-<div class="modal-back" id="modal-back" hidden>
+<div class="modal-back" id="modal-back">
   <div class="modal">
     <div class="modal-h">
       <h3 id="modal-title">Add Position</h3>
-      <button class="modal-x" id="modal-close">×</button>
+      <button class="modal-x" id="modal-close" type="button" aria-label="Close">×</button>
     </div>
     <form id="position-form" class="form-grid">
       <input type="hidden" id="f-id" />
@@ -225,6 +225,6 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="app.js"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>

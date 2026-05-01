@@ -30,6 +30,8 @@ let editingId = null;
 
 // ---------- Boot ----------
 document.addEventListener('DOMContentLoaded', () => {
+  // Always start with the modal closed, no matter what.
+  closeModal();
   bindUI();
   if (positions.length === 0) seedExample();
   render();
@@ -47,17 +49,17 @@ function bindUI() {
   $('#btn-import').addEventListener('click', () => $('#file-import').click());
   $('#file-import').addEventListener('change', handleImportFile);
 
-  // Modal close — bound multiple ways for reliability
-  const modalBack = $('#modal-back');
-  $('#modal-close').addEventListener('click', closeModal);
-  $('#modal-cancel').addEventListener('click', closeModal);
-  modalBack.addEventListener('click', e => {
-    // Click on the dark backdrop (anywhere outside the modal box) closes it
-    if (e.target === modalBack) closeModal();
+  // Modal close — bound via event delegation so it always works
+  document.addEventListener('click', e => {
+    const t = e.target;
+    if (!t) return;
+    if (t.id === 'modal-close' || t.id === 'modal-cancel') { closeModal(); return; }
+    if (t.id === 'modal-back') { closeModal(); return; }
+    if (t.closest && t.closest('#modal-close, #modal-cancel')) { closeModal(); return; }
   });
   // Escape key always closes the modal
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && !modalBack.hidden) closeModal();
+    if (e.key === 'Escape') closeModal();
   });
   $('#position-form').addEventListener('submit', savePositionFromForm);
 
@@ -366,7 +368,9 @@ function positionCard(p, kind) {
 function openModal(id) {
   editingId = id || null;
   $('#modal-title').textContent = id ? 'Edit Position' : 'Add Position';
-  $('#modal-back').hidden = false;
+  const back = $('#modal-back');
+  back.classList.add('is-open');
+  back.removeAttribute('hidden');
   $('#position-form').reset();
   if (id) {
     const p = positions.find(x => x.id === id);
@@ -396,7 +400,14 @@ function openModal(id) {
     $('#f-entry').value = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);
   }
 }
-function closeModal() { $('#modal-back').hidden = true; editingId = null; }
+function closeModal() {
+  const back = $('#modal-back');
+  if (back) {
+    back.classList.remove('is-open');
+    back.setAttribute('hidden', '');
+  }
+  editingId = null;
+}
 
 function savePositionFromForm(e) {
   e.preventDefault();
