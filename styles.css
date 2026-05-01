@@ -364,6 +364,7 @@ body {
   z-index: 50;
   overflow: auto;
 }
+.modal-back[hidden] { display: none !important; }
 .modal {
   background: var(--panel);
   border: 1px solid var(--border-strong);
@@ -380,13 +381,20 @@ body {
 }
 .modal-h h3 { margin: 0; font-size: 16px; }
 .modal-x {
-  background: transparent;
-  border: 0;
-  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
   font-size: 22px;
   cursor: pointer;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
-.modal-x:hover { color: var(--text); }
+.modal-x:hover { background: #2a3340; color: white; }
 .form-grid { padding: 16px 20px 20px; }
 .form-grid .row {
   display: grid;

@@ -47,9 +47,18 @@ function bindUI() {
   $('#btn-import').addEventListener('click', () => $('#file-import').click());
   $('#file-import').addEventListener('change', handleImportFile);
 
+  // Modal close — bound multiple ways for reliability
+  const modalBack = $('#modal-back');
   $('#modal-close').addEventListener('click', closeModal);
   $('#modal-cancel').addEventListener('click', closeModal);
-  $('#modal-back').addEventListener('click', e => { if (e.target.id === 'modal-back') closeModal(); });
+  modalBack.addEventListener('click', e => {
+    // Click on the dark backdrop (anywhere outside the modal box) closes it
+    if (e.target === modalBack) closeModal();
+  });
+  // Escape key always closes the modal
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !modalBack.hidden) closeModal();
+  });
   $('#position-form').addEventListener('submit', savePositionFromForm);
 
   $('#sort-active').addEventListener('change', render);
@@ -391,9 +400,15 @@ function closeModal() { $('#modal-back').hidden = true; editingId = null; }
 
 function savePositionFromForm(e) {
   e.preventDefault();
+  const pairVal = ($('#f-pair').value || '').trim();
+  if (!pairVal) {
+    toast('Please enter a Pair name (e.g. USDC/cbBTC).', 'err');
+    $('#f-pair').focus();
+    return;
+  }
   const data = {
     id: editingId || uid(),
-    pair:     ($('#f-pair').value || '').trim(),
+    pair:     pairVal,
     protocol: $('#f-protocol').value,
     chain:    $('#f-chain').value,
     entry:    $('#f-entry').value,
