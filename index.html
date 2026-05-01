@@ -5,7 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>LP Tracker — Uniswap · Aerodrome · Orca</title>
 <link rel="stylesheet" href="styles.css" />
+<link id="theme-link" rel="stylesheet" href="" />
 <link rel="preconnect" href="https://api.coingecko.com" />
+<script>
+  // Apply saved theme before paint to avoid a flash.
+  (function() {
+    var t = localStorage.getItem('lp-tracker.theme') || 'default';
+    var link = document.getElementById('theme-link');
+    if (t === 'purple') link.href = 'themes/purple-gold.css';
+    else if (t === 'synthwave') link.href = 'themes/synthwave.css';
+    else link.href = '';
+  })();
+</script>
 </head>
 <body>
 
@@ -16,6 +27,11 @@
     <div class="brand-sub">Uniswap · Aerodrome · Orca — Profit &amp; Loss Toolkit</div>
   </div>
   <div class="topbar-actions">
+    <select id="theme-select" class="btn btn-ghost" title="Theme" style="padding:10px 12px;">
+      <option value="default">Theme: Default</option>
+      <option value="purple">Theme: Royal Purple + Gold</option>
+      <option value="synthwave">Theme: Synthwave (Pink + Cyan)</option>
+    </select>
     <button id="btn-refresh" class="btn btn-ghost"><span class="ico">⟳</span> REFRESH PRICES</button>
     <button id="btn-csv"     class="btn btn-ghost"><span class="ico">▤</span> CSV</button>
     <button id="btn-excel"   class="btn btn-ghost"><span class="ico">▦</span> EXCEL</button>

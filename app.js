@@ -54,6 +54,20 @@ function bindUI() {
 
   $('#sort-active').addEventListener('change', render);
   $('#sort-closed').addEventListener('change', render);
+
+  // Theme switcher
+  const sel = $('#theme-select');
+  if (sel) {
+    sel.value = localStorage.getItem('lp-tracker.theme') || 'default';
+    sel.addEventListener('change', () => {
+      const t = sel.value;
+      localStorage.setItem('lp-tracker.theme', t);
+      const link = document.getElementById('theme-link');
+      if (t === 'purple') link.href = 'themes/purple-gold.css';
+      else if (t === 'synthwave') link.href = 'themes/synthwave.css';
+      else link.href = '';
+    });
+  }
 }
 
 // ---------- Storage ----------

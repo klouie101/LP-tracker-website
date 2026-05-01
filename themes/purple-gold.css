@@ -1,0 +1,66 @@
+/* ===== Theme: Royal Purple + Gold ===== */
+:root {
+  --bg: #0d0820;
+  --panel: #15102e;
+  --panel-2: #1c163a;
+  --border: #2a2150;
+  --border-strong: #3a2e6b;
+  --text: #f1ebff;
+  --muted: #a89dc9;
+  --muted-2: #877ba7;
+  --green: #5fe3a6;
+  --green-2: #2bc77f;
+  --red: #ff7b9a;
+  --red-2: #ef4f74;
+  --yellow: #e8c351;       /* gold */
+  --yellow-2: #c9a233;     /* deep gold */
+  --blue: #b69bff;         /* lavender */
+  --blue-2: #9b7af7;
+  --purple: #c8a8ff;
+  --shadow: 0 6px 24px rgba(40,10,80,.45);
+}
+
+body { background: radial-gradient(ellipse at top, #1a1140 0%, #0d0820 60%); }
+
+.brand-eyebrow { color: var(--yellow); }
+.brand-title span { color: var(--yellow); }
+
+.btn-import {
+  background: linear-gradient(180deg, #2a1f10, #1d1608);
+  border-color: #5a4416;
+  color: #f1cc6a;
+}
+.btn-primary {
+  background: linear-gradient(180deg, #f3d169, #d4ad33);
+  border-color: #b18915;
+  color: #1d1300;
+  box-shadow: 0 4px 18px rgba(212,173,51,.25);
+}
+.btn-primary:hover { background: linear-gradient(180deg, #ffe07f, #e6bd3d); }
+
+.card-active    { border-color: #2c5e44; }
+.card-portfolio { border-color: #5a4416; }
+
+.dot-green { background: var(--green); box-shadow: 0 0 8px var(--green); }
+
+.badge-chain    { background: rgba(182,155,255,.13); color: var(--blue); border-color: rgba(182,155,255,.35); }
+.badge-protocol { background: rgba(232,195,81,.13); color: var(--yellow); border-color: rgba(232,195,81,.35); }
+.badge-active   { background: rgba(95,227,166,.12); color: var(--green); border-color: rgba(95,227,166,.32); }
+.badge-inrange  { background: rgba(95,227,166,.12); color: var(--green); border-color: rgba(95,227,166,.32); }
+.badge-outrange { background: rgba(255,123,154,.13); color: var(--red); border-color: rgba(255,123,154,.4); }
+
+.position.active { border-left-color: var(--yellow); }
+.position.outrange { border-color: rgba(255,123,154,.45); box-shadow: 0 0 0 1px rgba(255,123,154,.18) inset; }
+
+.icon-btn.warn   { background: #2a1f10; border-color: #5a4416; color: #f1cc6a; }
+.icon-btn.danger { background: #3a1426; border-color: #6b1f3d; color: #ffb3c8; }
+
+.btn-fetch {
+  background: rgba(182,155,255,.1);
+  border-color: rgba(182,155,255,.4);
+  color: var(--blue);
+}
+.btn-fetch:hover { background: rgba(182,155,255,.2); }
+
+.tag-auto   { background: rgba(200,168,255,.13); color: var(--purple); }
+.tag-stable { background: rgba(95,227,166,.12);  color: var(--green); }

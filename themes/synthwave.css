@@ -1,0 +1,85 @@
+/* ===== Theme: Synthwave (Pink/Magenta + Cyan) ===== */
+:root {
+  --bg: #0a0420;
+  --panel: #150a2e;
+  --panel-2: #1d1140;
+  --border: #2c1a55;
+  --border-strong: #46278a;
+  --text: #f7e8ff;
+  --muted: #b6a0d8;
+  --muted-2: #8c7ab5;
+  --green: #4dffc3;
+  --green-2: #1be3a0;
+  --red: #ff5577;
+  --red-2: #e62e55;
+  --yellow: #ff45a8;       /* hot magenta repurposed as primary */
+  --yellow-2: #d61b85;
+  --blue: #5ce5fa;         /* cyan */
+  --blue-2: #1fc4e3;
+  --purple: #d18bff;
+  --shadow: 0 6px 30px rgba(255,69,168,.25);
+}
+
+body {
+  background:
+    radial-gradient(ellipse at 20% 0%, #2a0a4a 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 100%, #15406a 0%, transparent 55%),
+    #0a0420;
+  background-attachment: fixed;
+}
+
+.brand-eyebrow { color: var(--yellow); text-shadow: 0 0 12px rgba(255,69,168,.5); }
+.brand-title { text-shadow: 0 0 18px rgba(255,69,168,.18); }
+.brand-title span {
+  background: linear-gradient(90deg, #ff45a8, #5ce5fa);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.btn-import {
+  background: linear-gradient(180deg, #2a0a32, #1a0620);
+  border-color: #5e1c66;
+  color: #ff8bd0;
+}
+.btn-primary {
+  background: linear-gradient(180deg, #ff45a8, #c81e6c);
+  border-color: #a01258;
+  color: #1a000c;
+  box-shadow: 0 0 22px rgba(255,69,168,.35);
+}
+.btn-primary:hover {
+  background: linear-gradient(180deg, #ff60b8, #d62a7a);
+  box-shadow: 0 0 28px rgba(255,69,168,.55);
+}
+
+.card-active    { border-color: #1f5a6e; box-shadow: 0 0 22px rgba(92,229,250,.07) inset; }
+.card-portfolio { border-color: #6b1f55; box-shadow: 0 0 22px rgba(255,69,168,.08) inset; }
+
+.dot-green { background: var(--blue); box-shadow: 0 0 10px var(--blue); }
+
+.badge-chain    { background: rgba(92,229,250,.12); color: var(--blue); border-color: rgba(92,229,250,.4); }
+.badge-protocol { background: rgba(255,69,168,.12); color: var(--yellow); border-color: rgba(255,69,168,.4); }
+.badge-active   { background: rgba(77,255,195,.1); color: var(--green); border-color: rgba(77,255,195,.32); }
+.badge-inrange  { background: rgba(77,255,195,.1); color: var(--green); border-color: rgba(77,255,195,.32); }
+.badge-outrange { background: rgba(255,85,119,.14); color: var(--red); border-color: rgba(255,85,119,.4); }
+
+.position.active   { border-left-color: var(--yellow); }
+.position.outrange { border-color: rgba(255,85,119,.5); box-shadow: 0 0 0 1px rgba(255,85,119,.2) inset; }
+
+.icon-btn.warn   { background: #2a0a32; border-color: #5e1c66; color: #ff8bd0; }
+.icon-btn.danger { background: #3a1426; border-color: #6b1f3d; color: #ffb3c8; }
+
+.btn-fetch {
+  background: rgba(92,229,250,.1);
+  border-color: rgba(92,229,250,.45);
+  color: var(--blue);
+  box-shadow: 0 0 14px rgba(92,229,250,.2);
+}
+.btn-fetch:hover { background: rgba(92,229,250,.2); }
+
+.tag-auto   { background: rgba(209,139,255,.14); color: var(--purple); }
+.tag-stable { background: rgba(77,255,195,.12);  color: var(--green); }
+
+/* subtle grid glow on cards */
+.card { background: linear-gradient(180deg, rgba(255,69,168,.02), rgba(92,229,250,.02)), var(--panel); }
