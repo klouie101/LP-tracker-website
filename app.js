@@ -252,7 +252,7 @@ function renderTotals() {
   const pFees = aFees + cFees;
   const pProf = aProf + cProf;
   const pScalp = sum(positions, p => p.scalp);
-  const pDiff = pVal - pDep - pFees; // capital gain/loss vs. principal, excluding fees
+  const pDiff = pVal - pDep; // capital change only — fees are tracked separately in All Fees
   $('#p-deposited').textContent = money(pDep);
   $('#p-value').textContent     = money(pVal);
   setColored('#p-diff', pDiff, money);
