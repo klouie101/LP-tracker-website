@@ -183,8 +183,18 @@ function computeAPR(p) {
   return (fees / dep) * (365 / days) * 100;
 }
 function isOutOfRange(p) {
-  if (!p.bottom || !p.top || !p.tok2 || !tokenPrice(p.tok2)) return false;
-  const px = tokenPrice(p.tok2);
+  if (!p.bottom || !p.top) return false;
+  // Range is the price of the volatile (non-stable) token expressed in the stable token.
+  // Pick the non-stable token to read the price from.
+  const t1stable = STABLES.has((p.tok1?.sym || '').toUpperCase());
+  const t2stable = STABLES.has((p.tok2?.sym || '').toUpperCase());
+  let priceToken = null;
+  if (!t1stable && t2stable) priceToken = p.tok1;
+  else if (t1stable && !t2stable) priceToken = p.tok2;
+  else if (!t1stable && !t2stable) priceToken = p.tok2; // both volatile — fall back to tok2
+  if (!priceToken) return false;
+  const px = tokenPrice(priceToken);
+  if (!px) return false;
   return px < Number(p.bottom) || px > Number(p.top);
 }
 
