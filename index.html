@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>LP Tracker — Uniswap · Aerodrome · Orca</title>
-<link rel="stylesheet" href="styles.css?v=9" />
+<link rel="stylesheet" href="styles.css?v=10" />
 <link id="theme-link" rel="stylesheet" href="" />
 <link rel="preconnect" href="https://api.coingecko.com" />
 <script>
@@ -129,6 +129,12 @@
     </div>
     <form id="position-form" class="form-grid">
       <input type="hidden" id="f-id" />
+      <div class="form-hint">
+        <strong>💡 Quick update workflow:</strong>
+        <span>1. Update <em>Current Balance ($)</em> with the latest USD value from your DEX dashboard.</span>
+        <span>2. Update <em>New (Unclaimed) Fees ($)</em> with newly accrued fees.</span>
+        <span>3. If you've claimed any fees, move that amount from <em>New</em> to <em>Claimed Fees ($)</em>.</span>
+      </div>
       <div class="row">
         <label>PAIR
           <input type="text" id="f-pair" placeholder="e.g. USDC/cbBTC CL100" required />
@@ -225,6 +231,6 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="app.js?v=9"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>

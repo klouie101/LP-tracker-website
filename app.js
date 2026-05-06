@@ -176,11 +176,47 @@ function computeProfit(p) {
   return cv - (Number(p.deposited)||0) + computeFees(p) + (Number(p.scalp)||0);
 }
 function computeAPR(p) {
+  // alias for yearly APR
+  return computeYearlyAPR(p);
+}
+function computeFeeROI(p) {
   const dep = Number(p.deposited)||0;
   if (!dep) return 0;
+  return computeFees(p) / dep * 100;
+}
+function computeROI(p) {
+  // total return (price diff + fees + scalp) as % of deposited
+  const dep = Number(p.deposited)||0;
+  if (!dep) return 0;
+  return computeProfit(p) / dep * 100;
+}
+function computeADF(p) {
   const days = computeDays(p);
-  const fees = computeFees(p);
-  return (fees / dep) * (365 / days) * 100;
+  if (days <= 0) return 0;
+  return computeFees(p) / days;
+}
+function computeDailyAPR(p) {
+  const dep = Number(p.deposited)||0;
+  if (!dep) return 0;
+  return computeADF(p) / dep * 100;
+}
+function computeMonthlyAPR(p) { return computeDailyAPR(p) * 30; }
+function computeYearlyAPR(p) { return computeDailyAPR(p) * 365; }
+// Choose the volatile (non-stable) token for range display
+function priceTokenOf(p) {
+  const t1stable = STABLES.has((p.tok1?.sym || '').toUpperCase());
+  const t2stable = STABLES.has((p.tok2?.sym || '').toUpperCase());
+  if (!t1stable && t2stable) return p.tok1;
+  if (t1stable && !t2stable) return p.tok2;
+  return p.tok2 || p.tok1; // both volatile or both stable — fall back
+}
+// Format a price with sensible precision
+function fmtPrice(v) {
+  const n = Number(v) || 0;
+  if (n >= 100)  return '$' + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  if (n >= 1)    return '$' + n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  if (n > 0)     return '$' + n.toLocaleString(undefined, { maximumFractionDigits: 6 });
+  return '—';
 }
 function isOutOfRange(p) {
   if (!p.bottom || !p.top) return false;
@@ -324,12 +360,28 @@ function renderList(kind) {
 function positionCard(p, kind) {
   const isOpen = openIds.has(p.id);
   const days = computeDays(p);
-  const apr = computeAPR(p);
+  const apr = computeYearlyAPR(p);
   const profit = computeProfit(p);
   const cv = computeCurrentValue(p);
+  const fees = computeFees(p);
+  const roi = computeROI(p);
+  const feeROI = computeFeeROI(p);
+  const adf = computeADF(p);
+  const dailyAPR = computeDailyAPR(p);
+  const monthlyAPR = computeMonthlyAPR(p);
   const out = !p.exit && isOutOfRange(p);
   // Sanity flag: current value is more than 5x deposited — likely a data entry error.
   const suspicious = (Number(p.deposited) > 0) && (cv > p.deposited * 5);
+  // Range subtitle text
+  const pTok = priceTokenOf(p);
+  const pTokPx = pTok ? tokenPrice(pTok) : 0;
+  const rangeStr = (Number(p.bottom) > 0 && Number(p.top) > 0)
+    ? `Range: ${fmtPrice(p.bottom)} – ${fmtPrice(p.top)}` +
+      (pTokPx ? ` (current ${fmtPrice(pTokPx)} ${escapeHtml(pTok.sym||'')})` : '')
+    : '';
+  const splitStr = ((Number(p.tok1?.count) > 0) || (Number(p.tok2?.count) > 0))
+    ? `${num(p.tok1?.count)} ${escapeHtml(p.tok1?.sym||'')} / ${num(p.tok2?.count)} ${escapeHtml(p.tok2?.sym||'')}`
+    : '';
   const t1px = tokenPrice(p.tok1);
   const t2px = tokenPrice(p.tok2);
   const t1stable = STABLES.has((p.tok1.sym||'').toUpperCase());
@@ -339,27 +391,31 @@ function positionCard(p, kind) {
   <div class="position ${kind} ${out ? 'outrange' : ''} ${isOpen ? 'open' : ''}" data-id="${p.id}">
     <div class="pos-head">
       <button class="pos-toggle" title="Expand">${isOpen ? '▾' : '▸'}</button>
-      <div>
-        <span class="pos-name">${escapeHtml(p.pair || 'Unnamed')}</span>
-        <span class="pos-badges">
-          ${p.protocol ? `<span class="badge badge-protocol">${escapeHtml(p.protocol)}</span>` : ''}
-          ${p.chain ? `<span class="badge badge-chain">${escapeHtml(p.chain)}</span>` : ''}
-          ${kind === 'active'
-            ? `<span class="badge badge-active">● Active</span>`
-            : `<span class="badge badge-closed">Closed</span>`}
-          ${kind === 'active' ? (out
-              ? `<span class="badge badge-outrange">⚠ Out of Range</span>`
-              : (p.bottom && p.top && t2px ? `<span class="badge badge-inrange">In Range</span>` : '')
-            ) : ''}
-          ${suspicious ? `<span class="badge badge-outrange" title="Current value is more than 5× deposited — likely a typo. Click ✎ to edit.">⚠ Check Numbers</span>` : ''}
-        </span>
+      <div class="pos-title-col">
+        <div>
+          <span class="pos-name">${escapeHtml(p.pair || 'Unnamed')}</span>
+          <span class="pos-badges">
+            ${p.protocol ? `<span class="badge badge-protocol">${escapeHtml(p.protocol)}</span>` : ''}
+            ${p.chain ? `<span class="badge badge-chain">${escapeHtml(p.chain)}</span>` : ''}
+            ${kind === 'active'
+              ? `<span class="badge badge-active">● Active</span>`
+              : `<span class="badge badge-closed">Closed</span>`}
+            ${kind === 'active' ? (out
+                ? `<span class="badge badge-outrange">⚠ Out of Range</span>`
+                : (p.bottom && p.top && pTokPx ? `<span class="badge badge-inrange">In Range</span>` : '')
+              ) : ''}
+            ${suspicious ? `<span class="badge badge-outrange" title="Current value is more than 5× deposited — likely a typo. Click ✎ to edit.">⚠ Check Numbers</span>` : ''}
+          </span>
+        </div>
+        ${(rangeStr || splitStr) ? `<div class="pos-subtitle">${rangeStr}${(rangeStr && splitStr) ? ' <span class="dot-sep">·</span> ' : ''}${splitStr}</div>` : ''}
       </div>
       <div></div>
       <div class="pos-stats">
         <div class="pos-stat"><div class="lbl">DEPOSITED</div><div class="val">${money(p.deposited)}</div></div>
         <div class="pos-stat"><div class="lbl">CURRENT</div><div class="val">${money(cv)}</div></div>
-        <div class="pos-stat"><div class="lbl">PROFIT</div><div class="val ${cls(profit)}">${money(profit)}</div></div>
-        <div class="pos-stat"><div class="lbl">FEE APR</div><div class="val ${cls(apr)}">${apr.toFixed(2)}%</div></div>
+        <div class="pos-stat"><div class="lbl">P/L</div><div class="val ${cls(profit)}">${money(profit)}</div></div>
+        <div class="pos-stat"><div class="lbl">ROI</div><div class="val ${cls(roi)}">${roi.toFixed(2)}%</div></div>
+        <div class="pos-stat"><div class="lbl">APR</div><div class="val ${cls(apr)}">${apr.toFixed(2)}%</div></div>
         <div class="pos-stat"><div class="lbl">DAYS</div><div class="val">${days.toFixed(1)}d</div></div>
       </div>
       <div class="pos-actions">
@@ -391,6 +447,20 @@ function positionCard(p, kind) {
         <div class="field"><div class="lbl">New (unclaimed) fees ($)</div><div class="val-green">${money(p.feesNew)}</div></div>
         <div class="field"><div class="lbl">Claimed fees ($)</div><div>${money(p.feesClaim)}</div></div>
         <div class="field"><div class="lbl">Scalp ($)</div>       <div>${money(p.scalp)}</div></div>
+      </div>
+
+      <div class="pos-section-h">⚡ PERFORMANCE</div>
+      <div class="field-grid">
+        <div class="field"><div class="lbl">Price Diff $</div><div class="${cls(cv - (Number(p.deposited)||0))}">${money(cv - (Number(p.deposited)||0))}</div></div>
+        <div class="field"><div class="lbl">Total Fees</div><div class="val-green">${money(fees)}</div></div>
+        <div class="field"><div class="lbl">Profit (P/L)</div><div class="${cls(profit)}">${money(profit)}</div></div>
+        <div class="field"><div class="lbl">ROI %</div><div class="${cls(roi)}">${roi.toFixed(2)}%</div></div>
+        <div class="field"><div class="lbl">Fee ROI %</div><div class="val-green">${feeROI.toFixed(2)}%</div></div>
+        <div class="field"><div class="lbl">ADF (avg daily fees)</div><div class="val-green">${money(adf)}/d</div></div>
+        <div class="field"><div class="lbl">Daily APR</div><div class="val-green">${dailyAPR.toFixed(2)}%</div></div>
+        <div class="field"><div class="lbl">Monthly APR</div><div class="val-green">${monthlyAPR.toFixed(2)}%</div></div>
+        <div class="field"><div class="lbl">Yearly APR</div><div class="val-green">${apr.toFixed(2)}%</div></div>
+        <div class="field"><div class="lbl">Days in position</div><div>${days.toFixed(2)}d</div></div>
       </div>
 
       ${p.notes ? `<div class="pos-section-h">NOTES</div><div style="color:var(--muted);font-size:13px;white-space:pre-wrap;">${escapeHtml(p.notes)}</div>` : ''}
