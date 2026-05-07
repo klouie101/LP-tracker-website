@@ -282,13 +282,14 @@ function renderTotals() {
   setColored('#m-adf', adf, v => money(v) + '/d');
 
   // PORTFOLIO
-  const cCur = sum(closed, p => computeCurrentValue(p)); // user's recorded balance at close
-  const pDep = aDep + cDep;
-  const pVal = aCur + cCur;          // total $ across active + closed (closed = exit value)
-  const pFees = aFees + cFees;
-  const pProf = aProf + cProf;
+  // Capital metrics treat closed positions as already-redeployed into active (no double-counting).
+  // Fees + Profit are lifetime sums across active + closed.
+  const pDep  = aDep;
+  const pVal  = aCur;
+  const pDiff = aCur - aDep;             // capital change on currently-deployed positions
+  const pFees = aFees + cFees;           // lifetime fees
+  const pProf = aProf + cProf;           // lifetime profit
   const pScalp = sum(positions, p => p.scalp);
-  const pDiff = pVal - pDep; // capital change only — fees are tracked separately in All Fees
   $('#p-deposited').textContent = money(pDep);
   $('#p-value').textContent     = money(pVal);
   setColored('#p-diff', pDiff, money);

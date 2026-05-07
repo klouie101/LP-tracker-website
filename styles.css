@@ -137,6 +137,19 @@ body {
   font-weight: 700;
   margin-bottom: 4px;
 }
+.lbl-sub {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 6px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  border-radius: 999px;
+  background: rgba(96,165,250,0.1);
+  color: var(--blue);
+  border: 1px solid rgba(96,165,250,0.25);
+  text-transform: lowercase;
+}
 .card-grid .val {
   font-size: 18px;
   font-weight: 800;
