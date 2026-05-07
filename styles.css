@@ -232,10 +232,13 @@ body {
 
 .pos-head {
   display: grid;
-  grid-template-columns: 24px 1.2fr auto 1fr auto;
+  grid-template-columns: 24px minmax(0, 1fr) minmax(560px, auto) auto;
   align-items: center;
   gap: 14px;
   padding: 12px 14px;
+}
+@media (max-width: 1100px) {
+  .pos-head { grid-template-columns: 24px minmax(0, 1fr) auto auto; }
 }
 .pos-toggle {
   background: transparent;
@@ -276,19 +279,31 @@ body {
 .badge-outrange { background: rgba(248,113,113,.12); color: var(--red); border-color: rgba(248,113,113,.35); }
 
 .pos-stats {
-  display: flex;
-  gap: 26px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(78px, 1fr));
+  gap: 4px 14px;
   align-items: center;
-  justify-content: flex-end;
+  text-align: right;
+  min-width: 0;
+}
+.pos-stat {
+  min-width: 0;
+  text-align: right;
 }
 .pos-stat .lbl {
   font-size: 10px;
   letter-spacing: 1.2px;
   color: var(--muted-2);
   font-weight: 700;
+  text-align: right;
 }
-.pos-stat .val { font-size: 14px; font-weight: 800; }
+.pos-stat .val { font-size: 14px; font-weight: 800; text-align: right; }
+@media (max-width: 1100px) {
+  .pos-stats { grid-template-columns: repeat(3, minmax(80px, 1fr)); }
+}
+@media (max-width: 700px) {
+  .pos-stats { grid-template-columns: repeat(2, minmax(80px, 1fr)); }
+}
 
 .pos-actions {
   display: flex;

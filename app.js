@@ -409,7 +409,6 @@ function positionCard(p, kind) {
         </div>
         ${(rangeStr || splitStr) ? `<div class="pos-subtitle">${rangeStr}${(rangeStr && splitStr) ? ' <span class="dot-sep">·</span> ' : ''}${splitStr}</div>` : ''}
       </div>
-      <div></div>
       <div class="pos-stats">
         <div class="pos-stat"><div class="lbl">DEPOSITED</div><div class="val">${money(p.deposited)}</div></div>
         <div class="pos-stat"><div class="lbl">CURRENT</div><div class="val">${money(cv)}</div></div>
