@@ -239,23 +239,53 @@ function fmtOutOfRangeDuration(hours) {
 }
 // Stamp `outOfRangeSince` on positions that just crossed out; clear it when
 // price re-enters the range. Closed positions never track OOR.
+// Also maintains `oorHistory` — an array of {start, end} intervals so we can
+// compute "out of range X hours of the last 24h" for bouncy positions.
+const OOR_24H_MS = 24 * 3600 * 1000;
 function updateOutOfRangeTracking() {
   let changed = false;
+  const now = Date.now();
+  const cutoff = now - OOR_24H_MS;
   positions.forEach(p => {
     if (p.exit) {
       if (p.outOfRangeSince) { p.outOfRangeSince = null; changed = true; }
+      if (Array.isArray(p.oorHistory) && p.oorHistory.length) { p.oorHistory = []; changed = true; }
       return;
     }
+    if (!Array.isArray(p.oorHistory)) p.oorHistory = [];
     const out = isOutOfRange(p);
     if (out && !p.outOfRangeSince) {
-      p.outOfRangeSince = Date.now();
+      // Just crossed OOR: start consecutive timer + open a new interval.
+      p.outOfRangeSince = now;
+      p.oorHistory.push({ start: now, end: null });
       changed = true;
     } else if (!out && p.outOfRangeSince) {
+      // Just re-entered range: clear consecutive timer + close the open interval.
       p.outOfRangeSince = null;
-      changed = true;
+      const last = p.oorHistory[p.oorHistory.length - 1];
+      if (last && last.end === null) { last.end = now; changed = true; }
     }
+    // Trim closed intervals that ended before the 24h cutoff.
+    const before = p.oorHistory.length;
+    p.oorHistory = p.oorHistory.filter(iv => iv.end === null || iv.end >= cutoff);
+    if (p.oorHistory.length !== before) changed = true;
   });
   return changed;
+}
+// Cumulative hours out of range over the last 24h, summing all intervals
+// (clamped to the rolling window). Bouncy positions accumulate over the day
+// even when the consecutive timer keeps resetting.
+function outOfRange24h(p) {
+  if (!Array.isArray(p.oorHistory) || p.oorHistory.length === 0) return 0;
+  const now = Date.now();
+  const cutoff = now - OOR_24H_MS;
+  let totalMs = 0;
+  p.oorHistory.forEach(iv => {
+    const start = Math.max(iv.start, cutoff);
+    const end = iv.end === null ? now : iv.end;
+    if (end > start) totalMs += end - start;
+  });
+  return totalMs / 3600000;
 }
 
 function isOutOfRange(p) {
@@ -446,6 +476,16 @@ function positionCard(p, kind) {
   const oorBadgeLabel = out
     ? (p.outOfRangeSince ? `⚠ Out of Range · ${fmtOutOfRangeDuration(oorHrs)}` : '⚠ Out of Range')
     : '';
+  // Cumulative out-of-range stat over the last 24h — useful for bouncy
+  // positions whose consecutive timer keeps resetting.
+  const oor24h = !p.exit ? outOfRange24h(p) : 0;
+  const oor24hPct = (oor24h / 24) * 100;
+  // Hide when negligible (<6 min) so the subtitle stays clean.
+  const showOor24h = oor24h >= 0.1;
+  const oor24hClass = oor24hPct >= 50 ? 'pos-oor24h hot' : 'pos-oor24h';
+  const oor24hStr = showOor24h
+    ? `Out of range ${fmtOutOfRangeDuration(oor24h)} of last 24h (${oor24hPct.toFixed(0)}%)`
+    : '';
   // Sanity flag: current value is more than 5x deposited — likely a data entry error.
   const suspicious = (Number(p.deposited) > 0) && (cv > p.deposited * 5);
   // Range subtitle text
@@ -484,6 +524,7 @@ function positionCard(p, kind) {
           </span>
         </div>
         ${(rangeStr || splitStr) ? `<div class="pos-subtitle">${rangeStr}${(rangeStr && splitStr) ? ' <span class="dot-sep">·</span> ' : ''}${splitStr}</div>` : ''}
+        ${showOor24h ? `<div class="pos-subtitle ${oor24hClass}" title="Cumulative time out of range across the last 24h, including all bounces. Different from the consecutive timer in the badge.">${oor24hStr}</div>` : ''}
       </div>
       <div class="pos-stats">
         <div class="pos-stat"><div class="lbl">DEPOSITED</div><div class="val">${money(p.deposited)}</div></div>
