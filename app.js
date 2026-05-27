@@ -222,6 +222,42 @@ function fmtPrice(v) {
   if (n > 0)     return '$' + n.toLocaleString(undefined, { maximumFractionDigits: 6 });
   return '—';
 }
+// ---------- Out-of-range duration tracking ----------
+// Supports a "wait N hours before rebalancing" rule (default 48h):
+// yellow badge while inside the window, red badge once it expires.
+const OOR_WAIT_HOURS = 48;
+function outOfRangeHours(p) {
+  if (!p.outOfRangeSince) return 0;
+  return (Date.now() - p.outOfRangeSince) / 3600000;
+}
+function fmtOutOfRangeDuration(hours) {
+  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))}m`;
+  if (hours < 24) return `${Math.floor(hours)}h`;
+  const days = Math.floor(hours / 24);
+  const remH = Math.floor(hours - days * 24);
+  return remH > 0 ? `${days}d ${remH}h` : `${days}d`;
+}
+// Stamp `outOfRangeSince` on positions that just crossed out; clear it when
+// price re-enters the range. Closed positions never track OOR.
+function updateOutOfRangeTracking() {
+  let changed = false;
+  positions.forEach(p => {
+    if (p.exit) {
+      if (p.outOfRangeSince) { p.outOfRangeSince = null; changed = true; }
+      return;
+    }
+    const out = isOutOfRange(p);
+    if (out && !p.outOfRangeSince) {
+      p.outOfRangeSince = Date.now();
+      changed = true;
+    } else if (!out && p.outOfRangeSince) {
+      p.outOfRangeSince = null;
+      changed = true;
+    }
+  });
+  return changed;
+}
+
 function isOutOfRange(p) {
   if (!p.bottom || !p.top) return false;
   // Range is the price of the volatile (non-stable) token expressed in the stable token.
@@ -240,10 +276,14 @@ function isOutOfRange(p) {
 
 // ---------- Rendering ----------
 function render() {
+  if (updateOutOfRangeTracking()) savePositions();
   renderTotals();
   renderList('active');
   renderList('closed');
 }
+// Tick the out-of-range duration roughly once a minute so the timer
+// updates visibly while the tab is open.
+setInterval(() => { render(); }, 60000);
 
 function renderTotals() {
   const active = positions.filter(p => !p.exit);
@@ -396,6 +436,16 @@ function positionCard(p, kind) {
   const mAprStr = mature ? `${monthlyAPR.toFixed(2)}%` : '<1d';
   const aprCls  = mature ? cls(apr) : '';
   const out = !p.exit && isOutOfRange(p);
+  // Out-of-range duration: drives the yellow→red 48h badge.
+  const oorHrs = out ? outOfRangeHours(p) : 0;
+  const oorPastWait = oorHrs >= OOR_WAIT_HOURS;
+  const oorBadgeCls = oorPastWait ? 'badge-outrange' : 'badge-outrange-wait';
+  const oorBadgeTitle = oorPastWait
+    ? `Out of range ${fmtOutOfRangeDuration(oorHrs)} — past your ${OOR_WAIT_HOURS}h wait window. Time to rebalance.`
+    : `Out of range ${fmtOutOfRangeDuration(oorHrs)} of ${OOR_WAIT_HOURS}h wait window. Hold for now — price may re-enter.`;
+  const oorBadgeLabel = out
+    ? (p.outOfRangeSince ? `⚠ Out of Range · ${fmtOutOfRangeDuration(oorHrs)}` : '⚠ Out of Range')
+    : '';
   // Sanity flag: current value is more than 5x deposited — likely a data entry error.
   const suspicious = (Number(p.deposited) > 0) && (cv > p.deposited * 5);
   // Range subtitle text
@@ -427,7 +477,7 @@ function positionCard(p, kind) {
               ? `<span class="badge badge-active">● Active</span>`
               : `<span class="badge badge-closed">Closed</span>`}
             ${kind === 'active' ? (out
-                ? `<span class="badge badge-outrange">⚠ Out of Range</span>`
+                ? `<span class="badge ${oorBadgeCls}" title="${escapeHtml(oorBadgeTitle)}">${oorBadgeLabel}</span>`
                 : (p.bottom && p.top && pTokPx ? `<span class="badge badge-inrange">In Range</span>` : '')
               ) : ''}
             ${suspicious ? `<span class="badge badge-outrange" title="Current value is more than 5× deposited — likely a typo. Click ✎ to edit.">⚠ Check Numbers</span>` : ''}
