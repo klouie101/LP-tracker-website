@@ -202,6 +202,10 @@ function computeDailyAPR(p) {
 }
 function computeMonthlyAPR(p) { return computeDailyAPR(p) * 30; }
 function computeYearlyAPR(p) { return computeDailyAPR(p) * 365; }
+// Positions younger than this can't be reliably annualized (one hour of swap-fee drag
+// would otherwise extrapolate to an absurd APR and trash the portfolio averages).
+const MIN_DAYS_FOR_APR = 1;
+function isMature(p) { return computeDays(p) >= MIN_DAYS_FOR_APR; }
 // Choose the volatile (non-stable) token for range display
 function priceTokenOf(p) {
   const t1stable = STABLES.has((p.tok1?.sym || '').toUpperCase());
@@ -250,16 +254,18 @@ function renderTotals() {
   const aCur = sum(active, p => computeCurrentValue(p));
   const aFees = sum(active, p => computeFees(p));
   const aProf = sum(active, p => computeProfit(p));
-  const aApr = active.length
-    ? active.reduce((acc,p)=>acc + computeAPR(p)*(p.deposited||0), 0) / Math.max(aDep, 1e-9)
-    : 0;
+  const matureActive = active.filter(isMature);
+  const matureDep = sum(matureActive, p => p.deposited);
+  const aApr = matureDep > 0
+    ? matureActive.reduce((acc,p)=>acc + computeAPR(p)*(p.deposited||0), 0) / matureDep
+    : NaN;
 
   $('#a-positions').textContent = active.length;
   $('#a-deposited').textContent = money(aDep);
   $('#a-current').textContent   = money(aCur);
   setColored('#a-fees', aFees, money);
   setColored('#a-profit', aProf, money);
-  setColored('#a-apr', aApr, v => v.toFixed(2) + '%');
+  setAprCell('#a-apr', aApr);
 
   // CLOSED
   const cDep = sum(closed, p => p.deposited);
@@ -271,10 +277,9 @@ function renderTotals() {
   setColored('#c-profit', cProf, money);
 
   // MONTHLY EST.
-  const adfPerPos = active.map(p => {
-    const days = computeDays(p);
-    return computeFees(p) / Math.max(days, 1e-9);
-  });
+  // Only include mature positions — a 1-hour-old position with -$0.40 in entry swap
+  // fees would otherwise project to -$300/mo of "fees".
+  const adfPerPos = matureActive.map(p => computeFees(p) / computeDays(p));
   const adf = adfPerPos.reduce((a,b)=>a+b, 0);
   const monthly = adf * 30;
   setColored('#m-fees', monthly, money);
@@ -295,7 +300,7 @@ function renderTotals() {
   setColored('#p-diff', pDiff, money);
   setColored('#p-fees', pFees, money);
   setColored('#p-profit', pProf, money);
-  setColored('#p-apr', aApr, v => v.toFixed(2) + '%');
+  setAprCell('#p-apr', aApr);
   setColored('#p-scalps', pScalp, money);
   setColored('#p-monthly', monthly, money);
 }
@@ -304,6 +309,20 @@ function setColored(sel, val, fmt) {
   const el = $(sel);
   el.textContent = fmt(val);
   el.classList.remove('val-green','val-red');
+  if (val > 0.0001) el.classList.add('val-green');
+  else if (val < -0.0001) el.classList.add('val-red');
+}
+// APR cell — shows "—" with a tooltip when no positions are mature enough to annualize.
+function setAprCell(sel, val) {
+  const el = $(sel);
+  el.classList.remove('val-green','val-red');
+  if (!isFinite(val) || isNaN(val)) {
+    el.textContent = '—';
+    el.title = 'Needs at least one position open ≥ 1 day to compute APR.';
+    return;
+  }
+  el.title = '';
+  el.textContent = val.toFixed(2) + '%';
   if (val > 0.0001) el.classList.add('val-green');
   else if (val < -0.0001) el.classList.add('val-red');
 }
@@ -361,6 +380,7 @@ function renderList(kind) {
 function positionCard(p, kind) {
   const isOpen = openIds.has(p.id);
   const days = computeDays(p);
+  const mature = isMature(p);
   const apr = computeYearlyAPR(p);
   const profit = computeProfit(p);
   const cv = computeCurrentValue(p);
@@ -370,6 +390,11 @@ function positionCard(p, kind) {
   const adf = computeADF(p);
   const dailyAPR = computeDailyAPR(p);
   const monthlyAPR = computeMonthlyAPR(p);
+  // Pretty APR — "<1d" when position is too fresh to annualize meaningfully
+  const aprStr  = mature ? `${apr.toFixed(2)}%`        : '<1d';
+  const dAprStr = mature ? `${dailyAPR.toFixed(2)}%`   : '<1d';
+  const mAprStr = mature ? `${monthlyAPR.toFixed(2)}%` : '<1d';
+  const aprCls  = mature ? cls(apr) : '';
   const out = !p.exit && isOutOfRange(p);
   // Sanity flag: current value is more than 5x deposited — likely a data entry error.
   const suspicious = (Number(p.deposited) > 0) && (cv > p.deposited * 5);
@@ -415,7 +440,7 @@ function positionCard(p, kind) {
         <div class="pos-stat"><div class="lbl">CURRENT</div><div class="val">${money(cv)}</div></div>
         <div class="pos-stat"><div class="lbl">P/L</div><div class="val ${cls(profit)}">${money(profit)}</div></div>
         <div class="pos-stat"><div class="lbl">ROI</div><div class="val ${cls(roi)}">${roi.toFixed(2)}%</div></div>
-        <div class="pos-stat"><div class="lbl">APR</div><div class="val ${cls(apr)}">${apr.toFixed(2)}%</div></div>
+        <div class="pos-stat"><div class="lbl">APR</div><div class="val ${aprCls}" title="${mature ? '' : 'Position open less than 1 day — APR not annualized yet.'}">${aprStr}</div></div>
         <div class="pos-stat"><div class="lbl">DAYS</div><div class="val">${days.toFixed(1)}d</div></div>
       </div>
       <div class="pos-actions">
