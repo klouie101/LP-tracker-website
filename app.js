@@ -272,7 +272,7 @@ function renderTotals() {
   const cFees = sum(closed, p => computeFees(p));
   const cProf = sum(closed, p => computeProfit(p));
   $('#c-positions').textContent = closed.length;
-  $('#c-deployed').textContent  = money(cDep);
+  $('#c-avg-size').textContent  = money(closed.length ? cDep / closed.length : 0);
   setColored('#c-fees', cFees, money);
   setColored('#c-profit', cProf, money);
 
