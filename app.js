@@ -52,6 +52,7 @@ let positions = loadPositions();
 let priceCache = loadPriceCache();
 let openIds = new Set();   // which positions have details expanded
 let editingId = null;
+let modalHarvestLog = [];  // working copy of the harvest log while the modal is open
 
 // ---------- Boot ----------
 document.addEventListener('DOMContentLoaded', () => {
@@ -86,6 +87,13 @@ function bindUI() {
     if (e.key === 'Escape') closeModal();
   });
   $('#position-form').addEventListener('submit', savePositionFromForm);
+  $('#hv-add-btn').addEventListener('click', addHarvestEntry);
+  $('#harvest-log-list').addEventListener('click', e => {
+    const btn = e.target.closest('[data-hv-del]');
+    if (!btn) return;
+    modalHarvestLog = modalHarvestLog.filter(h => h.id !== btn.dataset.hvDel);
+    renderHarvestLogUI();
+  });
 
   $('#sort-active').addEventListener('change', render);
   $('#sort-closed').addEventListener('change', render);
@@ -579,6 +587,18 @@ function positionCard(p, kind) {
         <div class="field"><div class="lbl">Days in position</div><div>${days.toFixed(2)}d</div></div>
       </div>
 
+      ${Array.isArray(p.harvestLog) && p.harvestLog.length ? `
+        <div class="pos-section-h">🌾 HARVEST HISTORY</div>
+        <div class="harvest-log-list">
+          ${[...p.harvestLog].sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(h => `
+            <div class="harvest-entry">
+              <div class="hv-date">${escapeHtml(h.date || '—')}</div>
+              <div class="hv-amount">${money(h.amount)}</div>
+              <div class="hv-notes" title="${escapeHtml(h.notes||'')}">${escapeHtml(h.notes||'')}</div>
+              <div></div>
+            </div>`).join('')}
+        </div>` : ''}
+
       ${p.notes ? `<div class="pos-section-h">NOTES</div><div style="color:var(--muted);font-size:13px;white-space:pre-wrap;">${escapeHtml(p.notes)}</div>` : ''}
 
       <div class="pos-section-h">LIVE PRICES</div>
@@ -626,13 +646,30 @@ function openModal(id) {
     $('#f-tok2').value = p.tok2?.count ?? '';
     $('#f-tok2-px').value = p.tok2?.price ?? '';
     $('#f-fees-new').value = p.feesNew ?? '';
-    $('#f-fees-claim').value = p.feesClaim ?? '';
     $('#f-fees-swap').value = p.feesSwap ?? '';
     $('#f-scalp').value = p.scalp ?? '';
     $('#f-notes').value = p.notes || '';
+    // Seed the working harvest log. If this position predates the harvest log
+    // feature and already has a claimed-fees total, backfill it as one
+    // undated legacy entry so the running total isn't lost.
+    if (Array.isArray(p.harvestLog) && p.harvestLog.length) {
+      modalHarvestLog = p.harvestLog.map(h => ({ ...h }));
+    } else if (Number(p.feesClaim) > 0) {
+      modalHarvestLog = [{
+        id: uid(),
+        date: (p.entry || '').slice(0, 10) || new Date().toISOString().slice(0, 10),
+        amount: Number(p.feesClaim),
+        notes: 'Legacy total — exact date unknown',
+      }];
+    } else {
+      modalHarvestLog = [];
+    }
   } else {
     $('#f-entry').value = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);
+    modalHarvestLog = [];
   }
+  $('#hv-date').value = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  renderHarvestLogUI();
 }
 function closeModal() {
   const back = $('#modal-back');
@@ -641,6 +678,42 @@ function closeModal() {
     back.setAttribute('hidden', '');
   }
   editingId = null;
+  modalHarvestLog = [];
+}
+
+// ---------- Harvest log (dated fee-collection entries within the modal) ----------
+function sumHarvestLog(log) {
+  return (log || []).reduce((a, h) => a + (Number(h.amount) || 0), 0);
+}
+function renderHarvestLogUI() {
+  const listEl = $('#harvest-log-list');
+  const sorted = [...modalHarvestLog].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  listEl.innerHTML = sorted.length
+    ? sorted.map(h => `
+      <div class="harvest-entry">
+        <div class="hv-date">${escapeHtml(h.date || '—')}</div>
+        <div class="hv-amount">${money(h.amount)}</div>
+        <div class="hv-notes" title="${escapeHtml(h.notes || '')}">${escapeHtml(h.notes || '')}</div>
+        <button type="button" class="hv-del" data-hv-del="${h.id}" title="Remove">🗑</button>
+      </div>`).join('')
+    : `<div class="harvest-log-empty">No harvests logged yet — add one below.</div>`;
+  $('#f-fees-claim').value = sumHarvestLog(modalHarvestLog).toFixed(2);
+}
+function addHarvestEntry() {
+  const date = $('#hv-date').value;
+  const amount = numOrZero($('#hv-amount').value);
+  const notes = ($('#hv-notes').value || '').trim();
+  if (!date) { toast('Pick a date for the harvest.', 'err'); $('#hv-date').focus(); return; }
+  if (amount <= 0) { toast('Enter a harvest amount greater than 0.', 'err'); $('#hv-amount').focus(); return; }
+  modalHarvestLog.push({ id: uid(), date, amount, notes });
+  // Workflow step 3: move the collected amount from "New (unclaimed)" to claimed.
+  const newFeesEl = $('#f-fees-new');
+  newFeesEl.value = Math.max(0, numOrZero(newFeesEl.value) - amount).toFixed(2);
+  $('#hv-date').value = '';
+  $('#hv-amount').value = '';
+  $('#hv-notes').value = '';
+  renderHarvestLogUI();
+  toast('Harvest added.', 'ok');
 }
 
 function savePositionFromForm(e) {
@@ -673,10 +746,11 @@ function savePositionFromForm(e) {
       price: numOrZero($('#f-tok2-px').value),
     },
     feesNew:   numOrZero($('#f-fees-new').value),
-    feesClaim: numOrZero($('#f-fees-claim').value),
+    feesClaim: sumHarvestLog(modalHarvestLog),
     feesSwap:  numOrZero($('#f-fees-swap').value),
     scalp:     numOrZero($('#f-scalp').value),
     notes:     $('#f-notes').value || '',
+    harvestLog: modalHarvestLog.map(h => ({ ...h })),
   };
   // auto-stable price
   if (STABLES.has(data.tok1.sym) && !data.tok1.price) data.tok1.price = 1;
@@ -767,13 +841,14 @@ function exportCSV() {
   const headers = [
     'id','pair','protocol','chain','entry','exit','deposited','balance',
     'bottom','top','tok1_sym','tok1_count','tok1_price','tok2_sym','tok2_count','tok2_price',
-    'feesNew','feesClaim','feesSwap','scalp','notes'
+    'feesNew','feesClaim','feesSwap','scalp','notes','harvestLog'
   ];
   const rows = positions.map(p => [
     p.id, p.pair, p.protocol, p.chain, p.entry, p.exit, p.deposited, p.balance,
     p.bottom, p.top, p.tok1?.sym, p.tok1?.count, p.tok1?.price,
     p.tok2?.sym, p.tok2?.count, p.tok2?.price,
-    p.feesNew, p.feesClaim, p.feesSwap, p.scalp, (p.notes||'').replace(/\n/g,' ')
+    p.feesNew, p.feesClaim, p.feesSwap, p.scalp, (p.notes||'').replace(/\n/g,' '),
+    JSON.stringify(p.harvestLog || [])
   ]);
   const csv = [headers, ...rows].map(r => r.map(csvCell).join(',')).join('\n');
   download('lp-positions.csv', csv, 'text/csv');
@@ -861,7 +936,16 @@ function normalizeImported(r) {
     feesSwap: numOrZero(r.feesSwap),
     scalp: numOrZero(r.scalp),
     notes: r.notes || '',
+    harvestLog: parseHarvestLogField(r.harvestLog),
   };
+}
+function parseHarvestLogField(v) {
+  if (Array.isArray(v)) return v;
+  if (typeof v === 'string' && v.trim()) {
+    try { const arr = JSON.parse(v); return Array.isArray(arr) ? arr : []; }
+    catch { return []; }
+  }
+  return [];
 }
 
 // ---------- Helpers ----------

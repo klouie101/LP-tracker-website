@@ -207,12 +207,31 @@
         <label>NEW (UNCLAIMED) FEES ($)
           <input type="number" step="any" id="f-fees-new" placeholder="0.00" />
         </label>
-        <label>CLAIMED FEES ($)
-          <input type="number" step="any" id="f-fees-claim" placeholder="0.00" />
-        </label>
         <label>SWAP FEES PAID ($)
           <input type="number" step="any" id="f-fees-swap" placeholder="0.00" />
         </label>
+        <label>CLAIMED FEES ($) — total
+          <input type="number" step="any" id="f-fees-claim" placeholder="0.00" readonly />
+        </label>
+      </div>
+      <div class="harvest-log">
+        <div class="form-hint" style="margin-bottom:8px;">
+          <strong>🌾 Harvest log</strong>
+          <span>Log each fee collection with its date — Claimed Fees above is the sum of this list.</span>
+        </div>
+        <div id="harvest-log-list" class="harvest-log-list"></div>
+        <div class="harvest-add-row">
+          <label>Date
+            <input type="date" id="hv-date" />
+          </label>
+          <label>Amount ($)
+            <input type="number" step="any" id="hv-amount" placeholder="0.00" />
+          </label>
+          <label class="hv-notes-label">Notes
+            <input type="text" id="hv-notes" placeholder="optional" />
+          </label>
+          <button type="button" class="btn btn-ghost" id="hv-add-btn">+ Add Harvest</button>
+        </div>
       </div>
       <div class="row">
         <label>SCALP ($)
@@ -232,6 +251,6 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="app.js?v=12"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>
