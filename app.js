@@ -230,9 +230,12 @@ function priceTokenOf(p) {
 function rangePrice(p) {
   const t1stable = STABLES.has((p.tok1?.sym || '').toUpperCase());
   const t2stable = STABLES.has((p.tok2?.sym || '').toUpperCase());
-  if (!t1stable && !t2stable) {
-    const p1 = tokenPrice(p.tok1), p2 = tokenPrice(p.tok2);
-    if (!p1 || !p2) return { value: 0, unit: '', usd: false };
+  const p1 = tokenPrice(p.tok1), p2 = tokenPrice(p.tok2);
+  // Token/token pool: only when BOTH legs are non-stable AND both have live prices.
+  // Positions tracked by USD range alone (no token symbols or prices, e.g. the Orca
+  // pools) have no ratio to compute, so they fall through to the USD branch and
+  // render exactly as before.
+  if (!t1stable && !t2stable && p1 && p2) {
     return { value: p1 / p2, unit: `${p.tok2?.sym || ''} per ${p.tok1?.sym || ''}`, usd: false };
   }
   const tok = priceTokenOf(p);
