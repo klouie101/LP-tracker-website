@@ -222,6 +222,23 @@ function priceTokenOf(p) {
   if (t1stable && !t2stable) return p.tok2;
   return p.tok2 || p.tok1; // both volatile or both stable — fall back
 }
+// The number the range bounds (bottom/top) are measured in, plus its unit label.
+// Stable/volatile pool: the volatile token's USD price (unit "$"), unchanged behavior.
+// Token/token pool (both volatile): the ratio of tok1 priced in tok2, i.e. how many
+//   tok2 one tok1 buys. WETH/cbBTC with WETH as tok1 gives cbBTC per WETH. Enter the
+//   range bounds in that same unit. usd:false tells callers not to prefix a $ sign.
+function rangePrice(p) {
+  const t1stable = STABLES.has((p.tok1?.sym || '').toUpperCase());
+  const t2stable = STABLES.has((p.tok2?.sym || '').toUpperCase());
+  if (!t1stable && !t2stable) {
+    const p1 = tokenPrice(p.tok1), p2 = tokenPrice(p.tok2);
+    if (!p1 || !p2) return { value: 0, unit: '', usd: false };
+    return { value: p1 / p2, unit: `${p.tok2?.sym || ''} per ${p.tok1?.sym || ''}`, usd: false };
+  }
+  const tok = priceTokenOf(p);
+  const px = tok ? tokenPrice(tok) : 0;
+  return { value: px, unit: tok?.sym || '', usd: true };
+}
 // Format a price with sensible precision
 function fmtPrice(v) {
   const n = Number(v) || 0;
@@ -298,18 +315,11 @@ function outOfRange24h(p) {
 
 function isOutOfRange(p) {
   if (!p.bottom || !p.top) return false;
-  // Range is the price of the volatile (non-stable) token expressed in the stable token.
-  // Pick the non-stable token to read the price from.
-  const t1stable = STABLES.has((p.tok1?.sym || '').toUpperCase());
-  const t2stable = STABLES.has((p.tok2?.sym || '').toUpperCase());
-  let priceToken = null;
-  if (!t1stable && t2stable) priceToken = p.tok1;
-  else if (t1stable && !t2stable) priceToken = p.tok2;
-  else if (!t1stable && !t2stable) priceToken = p.tok2; // both volatile — fall back to tok2
-  if (!priceToken) return false;
-  const px = tokenPrice(priceToken);
-  if (!px) return false;
-  return px < Number(p.bottom) || px > Number(p.top);
+  // Compare the range bounds against rangePrice(): a USD price for stable/volatile
+  // pools, or the tok1-in-tok2 ratio for token/token pools (e.g. cbBTC per WETH).
+  const rp = rangePrice(p);
+  if (!rp.value) return false;
+  return rp.value < Number(p.bottom) || rp.value > Number(p.top);
 }
 
 // ---------- Rendering ----------
@@ -499,9 +509,14 @@ function positionCard(p, kind) {
   // Range subtitle text
   const pTok = priceTokenOf(p);
   const pTokPx = pTok ? tokenPrice(pTok) : 0;
+  const rp = rangePrice(p);
+  const rpCur = rp.value ? rp.value.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '';
   const rangeStr = (Number(p.bottom) > 0 && Number(p.top) > 0)
-    ? `Range: ${fmtPrice(p.bottom)} – ${fmtPrice(p.top)}` +
-      (pTokPx ? ` (current ${fmtPrice(pTokPx)} ${escapeHtml(pTok.sym||'')})` : '')
+    ? (rp.usd
+        ? `Range: ${fmtPrice(p.bottom)} – ${fmtPrice(p.top)}` +
+          (pTokPx ? ` (current ${fmtPrice(pTokPx)} ${escapeHtml(pTok.sym||'')})` : '')
+        : `Range: ${num(p.bottom)} – ${num(p.top)} ${escapeHtml(rp.unit)}` +
+          (rpCur ? ` (current ${rpCur})` : ''))
     : '';
   const splitStr = ((Number(p.tok1?.count) > 0) || (Number(p.tok2?.count) > 0))
     ? `${num(p.tok1?.count)} ${escapeHtml(p.tok1?.sym||'')} / ${num(p.tok2?.count)} ${escapeHtml(p.tok2?.sym||'')}`
@@ -526,7 +541,7 @@ function positionCard(p, kind) {
               : `<span class="badge badge-closed">Closed</span>`}
             ${kind === 'active' ? (out
                 ? `<span class="badge ${oorBadgeCls}" title="${escapeHtml(oorBadgeTitle)}">${oorBadgeLabel}</span>`
-                : (p.bottom && p.top && pTokPx ? `<span class="badge badge-inrange">In Range</span>` : '')
+                : (p.bottom && p.top && rp.value ? `<span class="badge badge-inrange">In Range</span>` : '')
               ) : ''}
             ${suspicious ? `<span class="badge badge-outrange" title="Current value is more than 5× deposited — likely a typo. Click ✎ to edit.">⚠ Check Numbers</span>` : ''}
           </span>
