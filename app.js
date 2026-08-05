@@ -555,6 +555,7 @@ function positionCard(p, kind) {
       <div class="pos-stats">
         <div class="pos-stat"><div class="lbl">DEPOSITED</div><div class="val">${money(p.deposited)}</div></div>
         <div class="pos-stat"><div class="lbl">CURRENT</div><div class="val">${money(cv)}</div></div>
+        <div class="pos-stat"><div class="lbl">FEES</div><div class="val ${cls(fees)}" title="Pending (unclaimed) + harvested fees, minus swap fees paid on entry.">${money(fees)}</div></div>
         <div class="pos-stat"><div class="lbl">P/L</div><div class="val ${cls(profit)}">${money(profit)}</div></div>
         <div class="pos-stat"><div class="lbl">ROI</div><div class="val ${cls(roi)}">${roi.toFixed(2)}%</div></div>
         <div class="pos-stat"><div class="lbl">APR</div><div class="val ${aprCls}" title="${mature ? '' : 'Position open less than 1 day — APR not annualized yet.'}">${aprStr}</div></div>

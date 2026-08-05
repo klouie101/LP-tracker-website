@@ -245,7 +245,7 @@ body {
 
 .pos-head {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) minmax(560px, auto) auto;
+  grid-template-columns: 24px minmax(0, 1fr) minmax(640px, auto) auto;
   align-items: center;
   gap: 14px;
   padding: 12px 14px;
@@ -298,7 +298,7 @@ body {
 
 .pos-stats {
   display: grid;
-  grid-template-columns: repeat(6, minmax(78px, 1fr));
+  grid-template-columns: repeat(7, minmax(78px, 1fr));
   gap: 4px 14px;
   align-items: center;
   text-align: right;
@@ -317,7 +317,7 @@ body {
 }
 .pos-stat .val { font-size: 14px; font-weight: 800; text-align: right; }
 @media (max-width: 1100px) {
-  .pos-stats { grid-template-columns: repeat(3, minmax(80px, 1fr)); }
+  .pos-stats { grid-template-columns: repeat(4, minmax(80px, 1fr)); }
 }
 @media (max-width: 700px) {
   .pos-stats { grid-template-columns: repeat(2, minmax(80px, 1fr)); }
