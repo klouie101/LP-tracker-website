@@ -1033,6 +1033,18 @@ function previewPatch() {
   toast(ok ? `${ok} position${ok === 1 ? '' : 's'} will change.` : 'No positions matched.', ok ? 'ok' : 'err');
 }
 
+function backfillLegacyLog(target, logKey, totalKey, note) {
+  if ((target[logKey] || []).length) return;
+  const total = Number(target[totalKey]) || 0;
+  if (total <= 0) return;
+  target[logKey] = [{
+    id: uid(),
+    date: (target.entry || '').slice(0, 10) || new Date().toISOString().slice(0, 10),
+    amount: total,
+    notes: note,
+  }];
+}
+
 function applyPatch() {
   if (!pendingPatch) return;
   let changed = 0;
@@ -1051,12 +1063,17 @@ function applyPatch() {
         target[k] = (typeof v === 'number' || k === 'notes' || typeof v === 'string') ? v : numOrZero(v);
       }
     });
+    // Positions that predate the logs carry a total but no entries, and the
+    // backfill normally happens when the modal opens. Patching without opening
+    // would otherwise append to nothing and wipe the existing total.
     if (entry.addHarvest?.length) {
+      backfillLegacyLog(target, 'harvestLog', 'feesClaim', 'Legacy total — exact date unknown');
       target.harvestLog = [...(target.harvestLog || []),
         ...entry.addHarvest.map(hv => ({ id: uid(), date: hv.date, amount: numOrZero(hv.amount), notes: hv.notes || '' }))];
       target.feesClaim = sumHarvestLog(target.harvestLog);
     }
     if (entry.addDeposit?.length) {
+      backfillLegacyLog(target, 'depositLog', 'deposited', 'Legacy total — split into real tranches if known');
       target.depositLog = [...(target.depositLog || []),
         ...entry.addDeposit.map(dp => ({ id: uid(), date: dp.date, amount: numOrZero(dp.amount), notes: dp.notes || '' }))];
       target.deposited = sumDepositLog(target.depositLog);
