@@ -171,6 +171,25 @@
           <input type="number" step="any" id="f-deposited" placeholder="0.00" required />
         </label>
       </div>
+      <div class="harvest-log">
+        <div class="form-hint" style="margin-bottom:8px;">
+          <strong>&#128176; Deposit log</strong>
+          <span>Log each deposit with its date &mdash; Deposited above is the sum of this list. Tranched positions need this so APR is weighted by how long each dollar actually worked.</span>
+        </div>
+        <div id="deposit-log-list" class="harvest-log-list"></div>
+        <div class="harvest-add-row">
+          <label>Date
+            <input type="date" id="dp-date" />
+          </label>
+          <label>Amount ($)
+            <input type="number" step="any" id="dp-amount" placeholder="0.00" />
+          </label>
+          <label class="hv-notes-label">Notes
+            <input type="text" id="dp-notes" placeholder="optional" />
+          </label>
+          <button type="button" class="btn btn-ghost" id="dp-add-btn">+ Add Deposit</button>
+        </div>
+      </div>
       <div class="row">
         <label>BOTTOM RANGE
           <input type="number" step="any" id="f-bottom" placeholder="0" />
@@ -252,6 +271,6 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="app.js?v=14"></script>
+<script src="app.js?v=15"></script>
 </body>
 </html>

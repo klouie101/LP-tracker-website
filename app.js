@@ -53,6 +53,7 @@ let priceCache = loadPriceCache();
 let openIds = new Set();   // which positions have details expanded
 let editingId = null;
 let modalHarvestLog = [];  // working copy of the harvest log while the modal is open
+let modalDepositLog = [];  // working copy of the deposit log while the modal is open
 
 // ---------- Boot ----------
 document.addEventListener('DOMContentLoaded', () => {
@@ -88,6 +89,13 @@ function bindUI() {
   });
   $('#position-form').addEventListener('submit', savePositionFromForm);
   $('#hv-add-btn').addEventListener('click', addHarvestEntry);
+  $('#dp-add-btn').addEventListener('click', addDepositEntry);
+  $('#deposit-log-list').addEventListener('click', e => {
+    const btn = e.target.closest('[data-dp-del]');
+    if (!btn) return;
+    modalDepositLog = modalDepositLog.filter(d => d.id !== btn.dataset.dpDel);
+    renderDepositLogUI();
+  });
   $('#harvest-log-list').addEventListener('click', e => {
     const btn = e.target.closest('[data-hv-del]');
     if (!btn) return;
@@ -203,10 +211,31 @@ function computeADF(p) {
   if (days <= 0) return 0;
   return computeFees(p) / days;
 }
-function computeDailyAPR(p) {
+// Average capital actually at work, weighted by how long each deposit was live.
+// A position built in tranches has less capital deployed than its final DEPOSITED
+// total for most of its life, so charging every dollar the full holding period
+// understates APR. With no deposit log we fall back to the old behaviour exactly.
+function computeAvgCapital(p) {
   const dep = Number(p.deposited)||0;
-  if (!dep) return 0;
-  return computeADF(p) / dep * 100;
+  const log = Array.isArray(p.depositLog) ? p.depositLog : [];
+  const days = computeDays(p);
+  if (!log.length || days <= 0 || !p.entry) return dep;
+  const startMs = new Date(p.entry).getTime();
+  const endMs = p.exit ? new Date(p.exit).getTime() : Date.now();
+  let capitalDays = 0;
+  for (const d of log) {
+    const amt = Number(d.amount)||0;
+    const tRaw = d.date ? new Date(d.date + 'T00:00:00').getTime() : startMs;
+    const t = isNaN(tRaw) ? startMs : Math.max(tRaw, startMs);
+    capitalDays += amt * Math.max((endMs - t) / 86400000, 0);
+  }
+  const avg = capitalDays / days;
+  return avg > 0 ? avg : dep;
+}
+function computeDailyAPR(p) {
+  const base = computeAvgCapital(p);
+  if (!base) return 0;
+  return computeADF(p) / base * 100;
 }
 function computeMonthlyAPR(p) { return computeDailyAPR(p) * 30; }
 function computeYearlyAPR(p) { return computeDailyAPR(p) * 365; }
@@ -604,6 +633,7 @@ function positionCard(p, kind) {
         <div class="field"><div class="lbl">Monthly APR</div><div class="val-green">${monthlyAPR.toFixed(2)}%</div></div>
         <div class="field"><div class="lbl">Yearly APR</div><div class="val-green">${apr.toFixed(2)}%</div></div>
         <div class="field"><div class="lbl">Days in position</div><div>${days.toFixed(2)}d</div></div>
+        <div class="field"><div class="lbl" title="Deposits weighted by how long each was live. APR is computed against this, not the DEPOSITED total.">Avg capital at work</div><div>${money(computeAvgCapital(p))}${computeAvgCapital(p) < (Number(p.deposited)||0) - 0.005 ? ` <span class="val-green">(tranched)</span>` : ''}</div></div>
       </div>
 
       ${Array.isArray(p.harvestLog) && p.harvestLog.length ? `
@@ -683,12 +713,31 @@ function openModal(id) {
     } else {
       modalHarvestLog = [];
     }
+    // Same treatment for deposits. A position that predates the deposit log gets
+    // its total backfilled as one entry dated at entry, which reproduces the old
+    // APR exactly until she splits it into the real tranches.
+    if (Array.isArray(p.depositLog) && p.depositLog.length) {
+      modalDepositLog = p.depositLog.map(d => ({ ...d }));
+    } else if (Number(p.deposited) > 0) {
+      modalDepositLog = [{
+        id: uid(),
+        date: (p.entry || '').slice(0, 10) || new Date().toISOString().slice(0, 10),
+        amount: Number(p.deposited),
+        notes: 'Legacy total — split into real tranches if known',
+      }];
+    } else {
+      modalDepositLog = [];
+    }
   } else {
     $('#f-entry').value = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);
     modalHarvestLog = [];
+    modalDepositLog = [];
   }
-  $('#hv-date').value = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const today = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  $('#hv-date').value = today;
+  $('#dp-date').value = today;
   renderHarvestLogUI();
+  renderDepositLogUI();
 }
 function closeModal() {
   const back = $('#modal-back');
@@ -698,6 +747,7 @@ function closeModal() {
   }
   editingId = null;
   modalHarvestLog = [];
+  modalDepositLog = [];
 }
 
 // ---------- Harvest log (dated fee-collection entries within the modal) ----------
@@ -735,6 +785,45 @@ function addHarvestEntry() {
   toast('Harvest added.', 'ok');
 }
 
+// ---------- Deposit log (dated deposit entries within the modal) ----------
+function sumDepositLog(log) {
+  return (log || []).reduce((a, d) => a + (Number(d.amount) || 0), 0);
+}
+function renderDepositLogUI() {
+  const listEl = $('#deposit-log-list');
+  if (!listEl) return;
+  const sorted = [...modalDepositLog].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  listEl.innerHTML = sorted.length
+    ? sorted.map(d => `
+      <div class="harvest-entry">
+        <div class="hv-date">${escapeHtml(d.date || '—')}</div>
+        <div class="hv-amount">${money(d.amount)}</div>
+        <div class="hv-notes" title="${escapeHtml(d.notes || '')}">${escapeHtml(d.notes || '')}</div>
+        <button type="button" class="hv-del" data-dp-del="${d.id}" title="Remove">🗑</button>
+      </div>`).join('')
+    : `<div class="harvest-log-empty">No deposits logged yet — add one below.</div>`;
+  const depEl = $('#f-deposited');
+  if (modalDepositLog.length) {
+    depEl.value = sumDepositLog(modalDepositLog).toFixed(2);
+    depEl.readOnly = true;
+  } else {
+    depEl.readOnly = false;
+  }
+}
+function addDepositEntry() {
+  const date = $('#dp-date').value;
+  const amount = numOrZero($('#dp-amount').value);
+  const notes = ($('#dp-notes').value || '').trim();
+  if (!date) { toast('Pick a date for the deposit.', 'err'); $('#dp-date').focus(); return; }
+  if (amount <= 0) { toast('Enter a deposit amount greater than 0.', 'err'); $('#dp-amount').focus(); return; }
+  modalDepositLog.push({ id: uid(), date, amount, notes });
+  $('#dp-date').value = '';
+  $('#dp-amount').value = '';
+  $('#dp-notes').value = '';
+  renderDepositLogUI();
+  toast('Deposit added.', 'ok');
+}
+
 function savePositionFromForm(e) {
   e.preventDefault();
   const pairVal = ($('#f-pair').value || '').trim();
@@ -770,7 +859,9 @@ function savePositionFromForm(e) {
     scalp:     numOrZero($('#f-scalp').value),
     notes:     $('#f-notes').value || '',
     harvestLog: modalHarvestLog.map(h => ({ ...h })),
+    depositLog: modalDepositLog.map(d => ({ ...d })),
   };
+  if (modalDepositLog.length) data.deposited = sumDepositLog(modalDepositLog);
   // auto-stable price
   if (STABLES.has(data.tok1.sym) && !data.tok1.price) data.tok1.price = 1;
   if (STABLES.has(data.tok2.sym) && !data.tok2.price) data.tok2.price = 1;
@@ -860,14 +951,15 @@ function exportCSV() {
   const headers = [
     'id','pair','protocol','chain','entry','exit','deposited','balance',
     'bottom','top','tok1_sym','tok1_count','tok1_price','tok2_sym','tok2_count','tok2_price',
-    'feesNew','feesClaim','feesSwap','scalp','notes','harvestLog'
+    'feesNew','feesClaim','feesSwap','scalp','notes','harvestLog','depositLog'
   ];
   const rows = positions.map(p => [
     p.id, p.pair, p.protocol, p.chain, p.entry, p.exit, p.deposited, p.balance,
     p.bottom, p.top, p.tok1?.sym, p.tok1?.count, p.tok1?.price,
     p.tok2?.sym, p.tok2?.count, p.tok2?.price,
     p.feesNew, p.feesClaim, p.feesSwap, p.scalp, (p.notes||'').replace(/\n/g,' '),
-    JSON.stringify(p.harvestLog || [])
+    JSON.stringify(p.harvestLog || []),
+    JSON.stringify(p.depositLog || [])
   ]);
   const csv = [headers, ...rows].map(r => r.map(csvCell).join(',')).join('\n');
   download('lp-positions.csv', csv, 'text/csv');
@@ -956,6 +1048,7 @@ function normalizeImported(r) {
     scalp: numOrZero(r.scalp),
     notes: r.notes || '',
     harvestLog: parseHarvestLogField(r.harvestLog),
+    depositLog: parseHarvestLogField(r.depositLog),
   };
 }
 function parseHarvestLogField(v) {
