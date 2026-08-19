@@ -37,6 +37,7 @@
     <button id="btn-excel"   class="btn btn-ghost"><span class="ico">▦</span> EXCEL</button>
     <button id="btn-pdf"     class="btn btn-ghost"><span class="ico">⎙</span> PDF</button>
     <button id="btn-import"  class="btn btn-import"><span class="ico">⇪</span> IMPORT</button>
+    <button id="btn-patch"   class="btn btn-ghost" title="Paste a JSON patch to update positions without replacing anything"><span class="ico">⌁</span> PATCH</button>
     <button id="btn-add"     class="btn btn-primary"><span class="ico">＋</span> ADD POSITION</button>
     <input id="file-import" type="file" accept=".csv,application/json" hidden />
   </div>
@@ -269,8 +270,34 @@
   </div>
 </div>
 
+<div class="modal-back" id="patch-back">
+  <div class="modal">
+    <div class="modal-h">
+      <h3>Apply patch</h3>
+      <button class="modal-x" id="patch-close" type="button" aria-label="Close">×</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-hint">
+        <strong>&#9089; Paste a JSON patch</strong>
+        <span>Updates matching positions in place. Never replaces your data the way IMPORT does.
+        Match by <code>id</code>, or by <code>pair</code> + <code>entry</code> (a YYYY-MM-DD date is enough).
+        Preview first, then apply.</span>
+      </div>
+      <textarea id="patch-input" rows="14" spellcheck="false"
+        placeholder='[{"match":{"pair":"WETH/USDC","entry":"2026-07-17"},"set":{"exit":"2026-08-19T18:30","balance":51.4743},"addHarvest":[{"date":"2026-08-19","amount":2.26}]}]'
+        style="width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;"></textarea>
+      <div id="patch-preview" class="harvest-log-list"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="patch-cancel">Cancel</button>
+        <button type="button" class="btn btn-ghost" id="patch-preview-btn">Preview</button>
+        <button type="button" class="btn btn-primary" id="patch-apply-btn" disabled>Apply</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="toast" class="toast" hidden></div>
 
-<script src="app.js?v=15"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>

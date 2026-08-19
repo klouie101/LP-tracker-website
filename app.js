@@ -74,6 +74,11 @@ function bindUI() {
   $('#btn-pdf').addEventListener('click', () => window.print());
   $('#btn-import').addEventListener('click', () => $('#file-import').click());
   $('#file-import').addEventListener('change', handleImportFile);
+  $('#btn-patch').addEventListener('click', openPatchModal);
+  $('#patch-close').addEventListener('click', closePatchModal);
+  $('#patch-cancel').addEventListener('click', closePatchModal);
+  $('#patch-preview-btn').addEventListener('click', previewPatch);
+  $('#patch-apply-btn').addEventListener('click', applyPatch);
 
   // Modal close — bound via event delegation so it always works
   document.addEventListener('click', e => {
@@ -944,6 +949,124 @@ async function refreshAllPrices(silent=false) {
 async function refreshOne(id) {
   await refreshAllPrices(true);
   toast('Prices refreshed.', 'ok');
+}
+
+// ---------- Patch (paste JSON to update positions in place) ----------
+// Deliberately NOT the same as IMPORT. Import replaces every position; this only
+// touches positions a patch entry actually matches, and previews before writing.
+let pendingPatch = null;
+
+function openPatchModal() {
+  pendingPatch = null;
+  $('#patch-input').value = '';
+  $('#patch-preview').innerHTML = '';
+  $('#patch-apply-btn').disabled = true;
+  const back = $('#patch-back');
+  back.removeAttribute('hidden');
+  back.classList.add('is-open');
+  $('#patch-input').focus();
+}
+function closePatchModal() {
+  const back = $('#patch-back');
+  back.classList.remove('is-open');
+  back.setAttribute('hidden', '');
+  pendingPatch = null;
+}
+
+// Match on id, or pair + entry. Entry may be a full datetime or just YYYY-MM-DD.
+function matchPosition(m) {
+  if (!m) return null;
+  if (m.id) return positions.find(p => p.id === m.id) || null;
+  const pair = (m.pair || '').trim().toLowerCase();
+  const entry = (m.entry || '').trim();
+  const hits = positions.filter(p => {
+    if (pair && (p.pair || '').trim().toLowerCase() !== pair) return false;
+    if (entry) {
+      const pe = String(p.entry || '');
+      if (!(pe === entry || pe.slice(0, entry.length) === entry)) return false;
+    }
+    return true;
+  });
+  return hits.length === 1 ? hits[0] : (hits.length ? { __ambiguous: hits.length } : null);
+}
+
+const PATCH_FIELDS = new Set([
+  'pair','protocol','chain','entry','exit','deposited','balance','bottom','top',
+  'feesNew','feesClaim','feesSwap','scalp','notes'
+]);
+
+function previewPatch() {
+  let parsed;
+  try {
+    parsed = JSON.parse($('#patch-input').value);
+  } catch (err) {
+    toast('Not valid JSON: ' + err.message, 'err');
+    return;
+  }
+  const list = Array.isArray(parsed) ? parsed : [parsed];
+  const rows = [];
+  let ok = 0;
+  list.forEach((entry, i) => {
+    const target = matchPosition(entry.match);
+    if (!target) {
+      rows.push(`<div class="harvest-entry"><div class="hv-date">#${i + 1}</div><div class="hv-amount">no match</div><div class="hv-notes">${escapeHtml(JSON.stringify(entry.match || {}))}</div></div>`);
+      return;
+    }
+    if (target.__ambiguous) {
+      rows.push(`<div class="harvest-entry"><div class="hv-date">#${i + 1}</div><div class="hv-amount">${target.__ambiguous} matches</div><div class="hv-notes">too ambiguous — add entry date or id</div></div>`);
+      return;
+    }
+    ok++;
+    const changes = [];
+    Object.keys(entry.set || {}).forEach(k => {
+      if (k === 'tok1' || k === 'tok2') { changes.push(`${k}=${JSON.stringify(entry.set[k])}`); return; }
+      if (!PATCH_FIELDS.has(k)) { changes.push(`${k} (ignored)`); return; }
+      changes.push(`${k}: ${JSON.stringify(target[k] ?? '')} → ${JSON.stringify(entry.set[k])}`);
+    });
+    (entry.addHarvest || []).forEach(hv => changes.push(`+harvest ${hv.date} ${money(hv.amount)}`));
+    (entry.addDeposit || []).forEach(dp => changes.push(`+deposit ${dp.date} ${money(dp.amount)}`));
+    rows.push(`<div class="harvest-entry"><div class="hv-date">${escapeHtml(target.pair || '')}</div><div class="hv-amount">${changes.length} change${changes.length === 1 ? '' : 's'}</div><div class="hv-notes">${escapeHtml(changes.join(' · '))}</div></div>`);
+  });
+  $('#patch-preview').innerHTML = rows.join('') || '<div class="harvest-log-empty">Nothing to apply.</div>';
+  pendingPatch = ok ? list : null;
+  $('#patch-apply-btn').disabled = !ok;
+  toast(ok ? `${ok} position${ok === 1 ? '' : 's'} will change.` : 'No positions matched.', ok ? 'ok' : 'err');
+}
+
+function applyPatch() {
+  if (!pendingPatch) return;
+  let changed = 0;
+  pendingPatch.forEach(entry => {
+    const target = matchPosition(entry.match);
+    if (!target || target.__ambiguous) return;
+    Object.keys(entry.set || {}).forEach(k => {
+      const v = entry.set[k];
+      if (k === 'tok1' || k === 'tok2') {
+        target[k] = {
+          sym: (v.sym ?? target[k]?.sym ?? '').toString().toUpperCase(),
+          count: v.count !== undefined ? numOrZero(v.count) : numOrZero(target[k]?.count),
+          price: v.price !== undefined ? numOrZero(v.price) : numOrZero(target[k]?.price),
+        };
+      } else if (PATCH_FIELDS.has(k)) {
+        target[k] = (typeof v === 'number' || k === 'notes' || typeof v === 'string') ? v : numOrZero(v);
+      }
+    });
+    if (entry.addHarvest?.length) {
+      target.harvestLog = [...(target.harvestLog || []),
+        ...entry.addHarvest.map(hv => ({ id: uid(), date: hv.date, amount: numOrZero(hv.amount), notes: hv.notes || '' }))];
+      target.feesClaim = sumHarvestLog(target.harvestLog);
+    }
+    if (entry.addDeposit?.length) {
+      target.depositLog = [...(target.depositLog || []),
+        ...entry.addDeposit.map(dp => ({ id: uid(), date: dp.date, amount: numOrZero(dp.amount), notes: dp.notes || '' }))];
+      target.deposited = sumDepositLog(target.depositLog);
+    }
+    changed++;
+  });
+  savePositions();
+  render();
+  closePatchModal();
+  toast(`Patched ${changed} position${changed === 1 ? '' : 's'}.`, 'ok');
 }
 
 // ---------- Import / Export ----------
