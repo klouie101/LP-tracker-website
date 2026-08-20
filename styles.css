@@ -289,6 +289,16 @@ body {
 .badge-active   { background: rgba(74,222,128,.1); color: var(--green); border-color: rgba(74,222,128,.3); }
 .badge-closed   { background: rgba(139,149,165,.12); color: var(--muted); border-color: rgba(139,149,165,.3); }
 .badge-inrange  { background: rgba(74,222,128,.1); color: var(--green); border-color: rgba(74,222,128,.3); }
+/* Rule 42. Deliberately theme-neutral white rather than a hue: every theme already
+   spends pink/purple on protocol, blue on chain, green on in-range and red on out-of-range,
+   so any colour I picked would collide in at least one of them. Reads as "quarantined". */
+.badge-darkside {
+  background: rgba(255,255,255,.10);
+  color: #f4f4f5;
+  border-color: rgba(255,255,255,.45);
+  font-weight: 700;
+  white-space: nowrap;
+}
 .badge-outrange      { background: rgba(248,113,113,.12); color: var(--red); border-color: rgba(248,113,113,.35); }
 .badge-outrange-wait { background: rgba(250,204,21,.12); color: var(--yellow); border-color: rgba(250,204,21,.35); }
 

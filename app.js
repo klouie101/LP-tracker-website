@@ -579,6 +579,7 @@ function positionCard(p, kind) {
         <div>
           <span class="pos-name">${escapeHtml(p.pair || 'Unnamed')}</span>
           <span class="pos-badges">
+            ${p.darkSide ? `<span class="badge badge-darkside" title="Rule 42: private, never in content. Excluded from portfolio APR and the monthly estimate; still counted in the dollar totals.">&#9670; Dark Side</span>` : ''}
             ${p.protocol ? `<span class="badge badge-protocol">${escapeHtml(p.protocol)}</span>` : ''}
             ${p.chain ? `<span class="badge badge-chain">${escapeHtml(p.chain)}</span>` : ''}
             ${kind === 'active'
