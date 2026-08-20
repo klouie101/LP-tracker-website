@@ -379,7 +379,12 @@ function renderTotals() {
   const aCur = sum(active, p => computeCurrentValue(p));
   const aFees = sum(active, p => computeFees(p));
   const aProf = sum(active, p => computeProfit(p));
-  const matureActive = active.filter(isMature);
+  // Rule 42: dark side positions stay in the list but never set a portfolio rate.
+  // Deposit-weighting protects against a big position with an ordinary APR; it does
+  // nothing against a tiny one with an extreme APR. This drives BOTH the portfolio
+  // APR and the monthly estimate below, so excluding here fixes both.
+  const matureActive = active.filter(p => isMature(p) && !p.darkSide);
+  const darkExcluded = active.filter(p => isMature(p) && p.darkSide).length;
   const matureDep = sum(matureActive, p => p.deposited);
   const aApr = matureDep > 0
     ? matureActive.reduce((acc,p)=>acc + computeAPR(p)*(p.deposited||0), 0) / matureDep
@@ -391,6 +396,9 @@ function renderTotals() {
   setColored('#a-fees', aFees, money);
   setColored('#a-profit', aProf, money);
   setAprCell('#a-apr', aApr);
+  const aprNote = $('#a-apr-note');
+  if (aprNote) aprNote.textContent = darkExcluded
+    ? `excludes ${darkExcluded} dark side` : '';
 
   // CLOSED
   const cDep = sum(closed, p => p.deposited);
@@ -703,6 +711,7 @@ function openModal(id) {
     $('#f-fees-swap').value = p.feesSwap ?? '';
     $('#f-scalp').value = p.scalp ?? '';
     $('#f-notes').value = p.notes || '';
+    $('#f-darkside').checked = !!p.darkSide;
     // Seed the working harvest log. If this position predates the harvest log
     // feature and already has a claimed-fees total, backfill it as one
     // undated legacy entry so the running total isn't lost.
@@ -863,6 +872,7 @@ function savePositionFromForm(e) {
     feesSwap:  numOrZero($('#f-fees-swap').value),
     scalp:     numOrZero($('#f-scalp').value),
     notes:     $('#f-notes').value || '',
+    darkSide:  $('#f-darkside').checked,
     harvestLog: modalHarvestLog.map(h => ({ ...h })),
     depositLog: modalDepositLog.map(d => ({ ...d })),
   };
@@ -992,7 +1002,7 @@ function matchPosition(m) {
 
 const PATCH_FIELDS = new Set([
   'pair','protocol','chain','entry','exit','deposited','balance','bottom','top',
-  'feesNew','feesClaim','feesSwap','scalp','notes'
+  'feesNew','feesClaim','feesSwap','scalp','notes','darkSide'
 ]);
 
 function previewPatch() {
@@ -1091,13 +1101,14 @@ function exportCSV() {
   const headers = [
     'id','pair','protocol','chain','entry','exit','deposited','balance',
     'bottom','top','tok1_sym','tok1_count','tok1_price','tok2_sym','tok2_count','tok2_price',
-    'feesNew','feesClaim','feesSwap','scalp','notes','harvestLog','depositLog'
+    'feesNew','feesClaim','feesSwap','scalp','notes','darkSide','harvestLog','depositLog'
   ];
   const rows = positions.map(p => [
     p.id, p.pair, p.protocol, p.chain, p.entry, p.exit, p.deposited, p.balance,
     p.bottom, p.top, p.tok1?.sym, p.tok1?.count, p.tok1?.price,
     p.tok2?.sym, p.tok2?.count, p.tok2?.price,
     p.feesNew, p.feesClaim, p.feesSwap, p.scalp, (p.notes||'').replace(/\n/g,' '),
+    p.darkSide ? 'true' : 'false',
     JSON.stringify(p.harvestLog || []),
     JSON.stringify(p.depositLog || [])
   ]);
@@ -1187,6 +1198,7 @@ function normalizeImported(r) {
     feesSwap: numOrZero(r.feesSwap),
     scalp: numOrZero(r.scalp),
     notes: r.notes || '',
+    darkSide: r.darkSide === true || String(r.darkSide).toLowerCase() === 'true' || r.darkSide === '1',
     harvestLog: parseHarvestLogField(r.harvestLog),
     depositLog: parseHarvestLogField(r.depositLog),
   };

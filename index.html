@@ -52,7 +52,7 @@
       <div><div class="lbl">CURRENT VALUE</div><div class="val" id="a-current">$0.00</div></div>
       <div><div class="lbl">TOTAL FEES</div><div class="val val-green" id="a-fees">$0.00</div></div>
       <div><div class="lbl">NET PROFIT</div><div class="val val-green" id="a-profit">$0.00</div></div>
-      <div><div class="lbl">AVG APR</div><div class="val val-green" id="a-apr">0.00%</div></div>
+      <div><div class="lbl">AVG APR</div><div class="val val-green" id="a-apr">0.00%</div><div class="lbl" id="a-apr-note" style="opacity:.6"></div></div>
     </div>
   </div>
 
@@ -158,6 +158,7 @@
             <option>Optimism</option>
             <option>Polygon</option>
             <option>Solana</option>
+            <option>Robinhood</option>
           </select>
         </label>
       </div>
@@ -261,6 +262,10 @@
         <label class="span2">NOTES
           <textarea id="f-notes" rows="2" placeholder="Notes…"></textarea>
         </label>
+        <label style="flex-direction:row;align-items:center;gap:8px">
+          <input type="checkbox" id="f-darkside" style="width:auto" />
+          <span>DARK SIDE (rule 42 — keep in list, exclude from portfolio APR &amp; monthly est.)</span>
+        </label>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" id="modal-cancel">Cancel</button>
@@ -298,6 +303,6 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="app.js?v=17"></script>
+<script src="app.js?v=18"></script>
 </body>
 </html>
