@@ -276,6 +276,100 @@ function rangePrice(p) {
   const px = tok ? tokenPrice(tok) : 0;
   return { value: px, unit: tok?.sym || '', usd: true };
 }
+// ---------- Live composition (v3 geometry) ----------
+// A concentrated-liquidity position converts continuously between its two legs as
+// price walks the range, so the token counts entered at deposit are stale the moment
+// price moves. That matters more than cosmetics: rule 43 fires on CONVERSION
+// PERCENTAGE, and reading the frozen counts off a row showed 61.7% converted on
+// 2026-08-22 when the position was actually 88.5% converted.
+//
+// With the range [Pa, Pb] and spot P all measured in quote-per-base, value per unit
+// of liquidity L is:
+//     base  = 1/sqrt(P) - 1/sqrt(Pb)     -> 0 at the top    (fully sold into quote)
+//     quote = sqrt(P)   - sqrt(Pa)       -> 0 at the bottom (fully in base)
+// The split is scale-free, so it needs no L — only the bounds and spot.
+
+// Which leg the range bounds are measured in. Mirrors rangePrice() exactly: it
+// quotes tok1 in tok2 for a volatile/volatile pool, and the volatile leg's USD
+// price otherwise — so a stable tok1 means the bounds run the other way round.
+function legsOf(p) {
+  const t1stable = STABLES.has((p.tok1?.sym || '').toUpperCase());
+  const t2stable = STABLES.has((p.tok2?.sym || '').toUpperCase());
+  if (t1stable && !t2stable) return { base: p.tok2, quote: p.tok1 };
+  return { base: p.tok1, quote: p.tok2 };
+}
+
+// Fraction of the position's value sitting in each leg, from geometry alone.
+// Returns null when the position has no usable range or price.
+function rangeSplit(p) {
+  const pa = Number(p.bottom), pb = Number(p.top);
+  const rp = rangePrice(p);
+  const P  = rp.value;
+  if (!(pa > 0 && pb > pa && P > 0)) return null;
+  const { base, quote } = legsOf(p);
+  if (!base || !quote) return null;
+  // Clamping spot to the bounds is not a fudge: outside the range the position IS
+  // 100% one leg, and the clamp produces exactly that.
+  const sa = Math.sqrt(pa), sb = Math.sqrt(pb);
+  const sp = Math.sqrt(Math.min(Math.max(P, pa), pb));
+  const baseVal  = P * (1 / sp - 1 / sb);   // base leg, valued in quote
+  const quoteVal = sp - sa;
+  const tot = baseVal + quoteVal;
+  if (!(tot > 0)) return null;
+  return {
+    base, quote, price: P,
+    fracBase:  baseVal  / tot,
+    fracQuote: quoteVal / tot,
+    toTop:   (pb / P - 1) * 100,
+    toFloor: (pa / P - 1) * 100,
+  };
+}
+
+// Live token counts. Only computed when the position's value is anchored
+// independently via Current Balance ($) — otherwise computeCurrentValue() derives
+// the value FROM these counts and deriving them back would be circular. Closed
+// positions keep their recorded exit counts.
+function liveCounts(p) {
+  if (p.exit) return null;
+  if (!(Number(p.balance) > 0)) return null;
+  const s = rangeSplit(p);
+  if (!s) return null;
+  const pxBase = tokenPrice(s.base), pxQuote = tokenPrice(s.quote);
+  if (!(pxBase > 0 && pxQuote > 0)) return null;
+  const V = computeCurrentValue(p);
+  return { ...s, baseCount: V * s.fracBase / pxBase, quoteCount: V * s.fracQuote / pxQuote };
+}
+
+// Rule 43: close fires at 98% converted into the quote asset, or 0.5% of headroom
+// left, whichever comes first. Scoped to the dark side sleeve, which is where the
+// rule is written — the conversion figure itself is shown on every position.
+const RULE43_CONVERTED_PCT = 98;
+const RULE43_HEADROOM_PCT  = 0.5;
+function rule43Fires(p, s) {
+  if (!p.darkSide || !s || p.exit) return null;
+  if (s.fracQuote * 100 >= RULE43_CONVERTED_PCT)
+    return `Rule 43: ${(s.fracQuote * 100).toFixed(1)}% converted into ${s.quote.sym || 'quote'} (fires at ${RULE43_CONVERTED_PCT}%).`;
+  if (s.toTop <= RULE43_HEADROOM_PCT && s.toTop >= 0)
+    return `Rule 43: ${s.toTop.toFixed(2)}% of headroom left (fires at ${RULE43_HEADROOM_PCT}%).`;
+  return null;
+}
+
+// Map a liveCounts() result back onto whichever of tok1/tok2 is being rendered.
+function countFor(live, tok) {
+  if (!live || !tok) return 0;
+  return tok === live.base ? live.baseCount : tok === live.quote ? live.quoteCount : 0;
+}
+
+// Token counts want more precision than dollar figures, and small balances want
+// more than large ones.
+function numCount(v) {
+  const n = Number(v) || 0;
+  if (!n) return '0';
+  const a = Math.abs(n);
+  const d = a >= 1000 ? 2 : a >= 1 ? 4 : 8;
+  return n.toLocaleString(undefined, { maximumFractionDigits: d });
+}
+
 // Format a price with sensible precision
 function fmtPrice(v) {
   const n = Number(v) || 0;
@@ -563,9 +657,30 @@ function positionCard(p, kind) {
         : `Range: ${num(p.bottom)} – ${num(p.top)} ${escapeHtml(rp.unit)}` +
           (rpCur ? ` (current ${rpCur})` : ''))
     : '';
-  const splitStr = ((Number(p.tok1?.count) > 0) || (Number(p.tok2?.count) > 0))
-    ? `${num(p.tok1?.count)} ${escapeHtml(p.tok1?.sym||'')} / ${num(p.tok2?.count)} ${escapeHtml(p.tok2?.sym||'')}`
+  // Composition, recomputed from the range each render. Falls back to the stored
+  // deposit counts only when geometry can't be computed (no range, no live price,
+  // or a closed position) — those are the cases where the stored pair is still the
+  // best record available.
+  const split = rangeSplit(p);
+  const live  = liveCounts(p);
+  const splitStr = live
+    ? `${numCount(live.baseCount)} ${escapeHtml(live.base.sym||'')} / ${numCount(live.quoteCount)} ${escapeHtml(live.quote.sym||'')}`
+    : (((Number(p.tok1?.count) > 0) || (Number(p.tok2?.count) > 0))
+        ? `${num(p.tok1?.count)} ${escapeHtml(p.tok1?.sym||'')} / ${num(p.tok2?.count)} ${escapeHtml(p.tok2?.sym||'')} <span class="split-stale" title="Deposit-time amounts. Live composition needs a range, a Current Balance ($), and prices on both legs.">at deposit</span>`
+        : '');
+  // Conversion percentage and the nearer edge — the two numbers rule 43 reads.
+  const convStr = (split && !p.exit)
+    ? `<span class="pos-conv" title="Share of position value now sitting in ${escapeHtml(split.quote.sym||'the quote leg')}, from range geometry. Rule 43 reads this number.">${(split.fracQuote*100).toFixed(1)}% ${escapeHtml(split.quote.sym||'')}</span>`
     : '';
+  const edgeStr = (split && !p.exit)
+    ? (() => {
+        const nearTop = Math.abs(split.toTop) <= Math.abs(split.toFloor);
+        const v = nearTop ? split.toTop : split.toFloor;
+        const hot = Math.abs(v) <= 1.5;
+        return `<span class="pos-edge${hot ? ' hot' : ''}" title="Distance to the nearer bound. ${nearTop ? 'Approaching the top converts into the quote leg.' : 'Approaching the floor converts into the base leg.'}">${v >= 0 ? '+' : ''}${v.toFixed(2)}% ${nearTop ? 'to top' : 'to floor'}</span>`;
+      })()
+    : '';
+  const r43 = rule43Fires(p, split);
   const t1px = tokenPrice(p.tok1);
   const t2px = tokenPrice(p.tok2);
   const t1stable = STABLES.has((p.tok1.sym||'').toUpperCase());
@@ -589,10 +704,11 @@ function positionCard(p, kind) {
                 ? `<span class="badge ${oorBadgeCls}" title="${escapeHtml(oorBadgeTitle)}">${oorBadgeLabel}</span>`
                 : (p.bottom && p.top && rp.value ? `<span class="badge badge-inrange">In Range</span>` : '')
               ) : ''}
+            ${r43 ? `<span class="badge badge-rule43" title="${escapeHtml(r43)}">&#9670; Rule 43 — Close</span>` : ''}
             ${suspicious ? `<span class="badge badge-outrange" title="Current value is more than 5× deposited — likely a typo. Click ✎ to edit.">⚠ Check Numbers</span>` : ''}
           </span>
         </div>
-        ${(rangeStr || splitStr) ? `<div class="pos-subtitle">${rangeStr}${(rangeStr && splitStr) ? ' <span class="dot-sep">·</span> ' : ''}${splitStr}</div>` : ''}
+        ${(rangeStr || splitStr || convStr) ? `<div class="pos-subtitle">${[rangeStr, splitStr, convStr, edgeStr].filter(Boolean).join(' <span class="dot-sep">·</span> ')}</div>` : ''}
         ${showOor24h ? `<div class="pos-subtitle ${oor24hClass}" title="Cumulative time out of range across the last 24h, including all bounces. Different from the consecutive timer in the badge.">${oor24hStr}</div>` : ''}
       </div>
       <div class="pos-stats">
@@ -666,8 +782,11 @@ function positionCard(p, kind) {
 
       <div class="pos-section-h">LIVE PRICES</div>
       <div class="field-grid">
-        <div class="field"><div class="lbl">${escapeHtml(p.tok1.sym||'Token 1')} current amt ${t1stable ? '<span class="tag tag-stable">STABLE $1</span>' : '<span class="tag tag-auto">AUTO</span>'}</div><div>${num(p.tok1.count)}</div></div>
-        <div class="field"><div class="lbl">${escapeHtml(p.tok2.sym||'Token 2')} current amt ${t2stable ? '<span class="tag tag-stable">STABLE $1</span>' : '<span class="tag tag-auto">AUTO</span>'}</div><div>${num(p.tok2.count)}</div></div>
+        <div class="field"><div class="lbl">${escapeHtml(p.tok1.sym||'Token 1')} current amt ${live ? '<span class="tag tag-auto">LIVE</span>' : (t1stable ? '<span class="tag tag-stable">STABLE $1</span>' : '<span class="tag tag-auto">AUTO</span>')}</div><div>${live ? numCount(countFor(live, p.tok1)) : num(p.tok1.count)}</div></div>
+        <div class="field"><div class="lbl">${escapeHtml(p.tok2.sym||'Token 2')} current amt ${live ? '<span class="tag tag-auto">LIVE</span>' : (t2stable ? '<span class="tag tag-stable">STABLE $1</span>' : '<span class="tag tag-auto">AUTO</span>')}</div><div>${live ? numCount(countFor(live, p.tok2)) : num(p.tok2.count)}</div></div>
+        ${split ? `<div class="field"><div class="lbl">Composition <span class="tag tag-auto">LIVE</span></div><div>${(split.fracBase*100).toFixed(1)}% ${escapeHtml(split.base.sym||'base')} / ${(split.fracQuote*100).toFixed(1)}% ${escapeHtml(split.quote.sym||'quote')}</div></div>` : ''}
+        ${split ? `<div class="field"><div class="lbl">Headroom <span class="tag tag-auto">LIVE</span></div><div>${split.toTop >= 0 ? '+' : ''}${split.toTop.toFixed(2)}% to top / ${split.toFloor.toFixed(2)}% to floor</div></div>` : ''}
+        ${(live && (Number(p.tok1?.count) > 0 || Number(p.tok2?.count) > 0)) ? `<div class="field"><div class="lbl">At deposit</div><div class="field-muted">${num(p.tok1?.count)} ${escapeHtml(p.tok1?.sym||'')} / ${num(p.tok2?.count)} ${escapeHtml(p.tok2?.sym||'')}</div></div>` : ''}
         <div class="field"><div class="lbl">${escapeHtml(p.tok1.sym||'Token 1')} price ($) ${t1stable ? '<span class="tag tag-stable">STABLE $1</span>' : '<span class="tag tag-auto">AUTO</span>'}</div><div>${num(t1px)}</div></div>
         <div class="field"><div class="lbl">${escapeHtml(p.tok2.sym||'Token 2')} price ($) ${t2stable ? '<span class="tag tag-stable">STABLE $1</span>' : '<span class="tag tag-auto">AUTO</span>'}</div><div>${num(t2px)}</div></div>
         <div class="field"><div class="lbl">USD Value of LP</div><div>${money(cv)}</div></div>

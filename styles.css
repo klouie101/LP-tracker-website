@@ -615,3 +615,30 @@ body {
   .val-green { color: #166534 !important; }
   .val-red   { color: #991b1b !important; }
 }
+
+/* Live composition readouts — conversion %, nearer edge, and the rule 43 badge. */
+.pos-conv {
+  color: var(--cyan, #22d3ee);
+  font-variant-numeric: tabular-nums;
+}
+.pos-edge {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.pos-edge.hot {
+  color: var(--yellow, #facc15);
+  font-weight: 600;
+}
+.split-stale {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  opacity: .55;
+}
+.badge-rule43 {
+  background: rgba(248,113,113,.14);
+  color: var(--red, #f87171);
+  border-color: rgba(248,113,113,.45);
+  font-weight: 600;
+}
+.field-muted { color: var(--muted); }
