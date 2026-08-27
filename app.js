@@ -63,6 +63,10 @@ document.addEventListener('DOMContentLoaded', () => {
   render();
   // background refresh on load (silent)
   refreshAllPrices(true).catch(()=>{});
+  // Rebuild rule 50's clock from candles on every load. This is the whole point
+  // of the candle path: the tab was shut overnight and the in-tab timer saw none
+  // of it.
+  refreshOorFromCandles(true).catch(()=>{});
 });
 
 // ---------- UI binding ----------
@@ -379,9 +383,177 @@ function fmtPrice(v) {
   return '—';
 }
 // ---------- Out-of-range duration tracking ----------
-// Supports a "wait N hours before rebalancing" rule (default 48h):
-// yellow badge while inside the window, red badge once it expires.
+// Rule 50: "Time out of range accumulates from the moment a range is placed, and
+// price stepping back inside does not reset it." Three things must hold for that
+// clock to mean anything. Until 2026-08-27 none of them did:
+//
+//   1. It has to be CUMULATIVE. The 48h leg was compared against the CONSECUTIVE
+//      timer, which is precisely the reading rule 50 replaced on 08-24.
+//   2. It has to run from ENTRY. `oorHistory` was trimmed to a rolling 24h window.
+//   3. It has to cover time the tab was CLOSED. `outOfRangeSince = Date.now()`
+//      stamps when the page first SAW the position out, not when it crossed.
+//      cbBTC/SOL crossed at 18:15 EDT on 08-26 and this badge read "16m" the
+//      following midday against a true 17.2 hours.
+//
+// So the clock is now reconstructed from exchange candles — the same source rule
+// 45's drift already comes from — and the in-tab observed timer is kept only as a
+// fallback. Which method produced a number is recorded and displayed, because
+// comparing across methods is not a second look at the same quantity.
 const OOR_WAIT_HOURS = 48;
+
+// Exact wrappers only. An LST is not its underlying: jitoSOL/SOL drifts, and a
+// mapping that pretended otherwise would put a wrong number behind a real trigger.
+const CB_PRODUCTS = {
+  BTC: 'BTC-USD', WBTC: 'BTC-USD', CBBTC: 'BTC-USD',
+  ETH: 'ETH-USD', WETH: 'ETH-USD',
+  SOL: 'SOL-USD', WSOL: 'SOL-USD',
+};
+const CB_MAX_CANDLES = 300;
+const OOR_CANDLE_TTL_MS = 10 * 60 * 1000;
+// Five-minute resolution for the whole of a normal position's life. Hourly candles
+// were tried first and demonstrably undercount: on cbBTC/SOL they read 19.17h
+// against a true 20.25h, because the pair crossed its floor in bursts shorter than
+// an hour — eight of its ten excursions were under 15 minutes. Rule 50 counts
+// exactly that kind of time, so the fine grid is the default and hourly is a
+// labelled fallback for anything older than the cap.
+const OOR_FINE_DAYS = 14;
+const OOR_FINE_WINDOW_MS = OOR_FINE_DAYS * 24 * 3600 * 1000;
+
+function cbProductFor(sym) {
+  const s = (sym || '').toUpperCase();
+  if (!s) return null;
+  if (STABLES.has(s)) return 'STABLE';
+  return CB_PRODUCTS[s] || null;
+}
+
+// Coinbase caps a request at 300 candles, so walk the span in chunks.
+// Returns Map<tsSeconds, close>.
+async function cbCandles(product, granularity, startMs, endMs) {
+  const byTs = new Map();
+  const span = granularity * 1000 * CB_MAX_CANDLES;
+  for (let s = startMs; s < endMs; s += span) {
+    const e = Math.min(s + span, endMs);
+    const url = `https://api.exchange.coinbase.com/products/${product}/candles`
+      + `?granularity=${granularity}`
+      + `&start=${new Date(s).toISOString()}&end=${new Date(e).toISOString()}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`${product} HTTP ${res.status}`);
+    const rows = await res.json();
+    if (!Array.isArray(rows)) throw new Error(`${product} bad payload`);
+    rows.forEach(r => byTs.set(r[0], r[4]));   // [ time, low, high, open, close, vol ]
+  }
+  return byTs;
+}
+
+// Reproduce rangePrice()'s quantity as a time series, so reconstructed crossings
+// are measured against the very number the badge shows live. Returns points
+// carrying their own step so mixed granularities can be walked as one series.
+async function rangePriceSeries(p, granularity, startMs, endMs) {
+  const t1 = (p.tok1?.sym || '').toUpperCase();
+  const t2 = (p.tok2?.sym || '').toUpperCase();
+  const step = granularity * 1000;
+  const both = !STABLES.has(t1) && !STABLES.has(t2) && t1 && t2;
+  if (both) {
+    const a = cbProductFor(t1), b = cbProductFor(t2);
+    if (!a || !b || a === 'STABLE' || b === 'STABLE') return null;
+    const [A, B] = await Promise.all([
+      cbCandles(a, granularity, startMs, endMs),
+      cbCandles(b, granularity, startMs, endMs),
+    ]);
+    const out = [];
+    A.forEach((v, ts) => { const w = B.get(ts); if (v > 0 && w > 0) out.push({ ts, v: v / w, step }); });
+    return out.sort((x, y) => x.ts - y.ts);
+  }
+  const prod = cbProductFor(priceTokenOf(p)?.sym);
+  if (!prod || prod === 'STABLE') return null;
+  const A = await cbCandles(prod, granularity, startMs, endMs);
+  return [...A.entries()].map(([ts, v]) => ({ ts, v, step })).sort((x, y) => x.ts - y.ts);
+}
+
+// Walk a price series and total the time spent outside [bottom, top]. Each point
+// contributes its own bucket width, so hourly history and 5-minute recent detail
+// can be spliced into one clock.
+function oorFromPoints(points, bottom, top) {
+  let cumulativeMs = 0, consecutiveMs = 0, firstOutMs = null, endedOut = false, episodes = 0;
+  points.forEach(pt => {
+    const out = pt.v < bottom || pt.v > top;
+    if (out) {
+      cumulativeMs += pt.step;
+      consecutiveMs += pt.step;
+      if (!endedOut) episodes += 1;              // a new excursion, not a continuation
+      if (firstOutMs === null) firstOutMs = pt.ts * 1000;
+    } else {
+      consecutiveMs = 0;
+    }
+    endedOut = out;
+  });
+  return { cumulativeMs, consecutiveMs, firstOutMs, endedOut, episodes };
+}
+
+// Five-minute grid back to the cap, hourly before that. A position older than the
+// cap gets a cumulative figure that is a FLOOR, not a measurement, and says so.
+async function computeOorCandle(p, entryMs) {
+  const bottom = Number(p.bottom), top = Number(p.top);
+  const now = Date.now();
+  const fineFrom = Math.max(entryMs, now - OOR_FINE_WINDOW_MS);
+  const hasCoarseTail = fineFrom > entryMs;
+  const points = [];
+  if (hasCoarseTail) {
+    const coarse = await rangePriceSeries(p, 3600, entryMs, fineFrom);
+    if (!coarse) return null;
+    points.push(...coarse);
+  }
+  const fine = await rangePriceSeries(p, 300, fineFrom, now);
+  if (!fine) return null;
+  points.push(...fine);
+  if (!points.length) return null;
+  const r = oorFromPoints(points, bottom, top);
+  const last = points[points.length - 1];
+  return {
+    cumulativeH: r.cumulativeMs / 3600000,
+    consecutiveH: r.consecutiveMs / 3600000,
+    episodes: r.episodes,
+    firstOutMs: r.firstOutMs,
+    endedOut: r.endedOut,
+    seriesEndMs: last.ts * 1000 + last.step,
+    resolutionMin: 5,
+    coarseTail: hasCoarseTail,
+    computedAt: now,
+    src: 'candles',
+  };
+}
+
+let oorRefreshInFlight = false;
+async function refreshOorFromCandles(force) {
+  if (oorRefreshInFlight) return false;
+  oorRefreshInFlight = true;
+  let changed = false;
+  try {
+    for (const p of positions) {
+      if (p.exit) continue;
+      if (!(Number(p.bottom) > 0 && Number(p.top) > Number(p.bottom))) continue;
+      const entryMs = Date.parse(p.entry);
+      if (!entryMs) continue;
+      if (!force && p.oorCandle && Date.now() - p.oorCandle.computedAt < OOR_CANDLE_TTL_MS) continue;
+      try {
+        const res = await computeOorCandle(p, entryMs);
+        if (res) { p.oorCandle = res; changed = true; }
+      } catch (err) {
+        // A throttled endpoint is not a measurement of zero, and a missing value
+        // is not zero either. Keep the last good reading and let the source
+        // label say what produced it.
+        console.warn('OOR candle refresh failed for', p.pair, err.message);
+      }
+    }
+  } finally {
+    oorRefreshInFlight = false;
+  }
+  if (changed) { savePositions(); render(); }
+  return changed;
+}
+
+// Consecutive time out of range, observed in-tab. Display only — rule 50's leg
+// does not fire on this.
 function outOfRangeHours(p) {
   if (!p.outOfRangeSince) return 0;
   return (Date.now() - p.outOfRangeSince) / 3600000;
@@ -393,15 +565,12 @@ function fmtOutOfRangeDuration(hours) {
   const remH = Math.floor(hours - days * 24);
   return remH > 0 ? `${days}d ${remH}h` : `${days}d`;
 }
-// Stamp `outOfRangeSince` on positions that just crossed out; clear it when
-// price re-enters the range. Closed positions never track OOR.
-// Also maintains `oorHistory` — an array of {start, end} intervals so we can
-// compute "out of range X hours of the last 24h" for bouncy positions.
-const OOR_24H_MS = 24 * 3600 * 1000;
+// Stamp `outOfRangeSince` on positions that just crossed out; clear it when price
+// re-enters. Closed positions never track OOR. `oorHistory` keeps every interval
+// since entry — rule 50 says the clock does not reset, so nothing is trimmed.
 function updateOutOfRangeTracking() {
   let changed = false;
-  const now = Date.now();
-  const cutoff = now - OOR_24H_MS;
+  const ts = Date.now();
   positions.forEach(p => {
     if (p.exit) {
       if (p.outOfRangeSince) { p.outOfRangeSince = null; changed = true; }
@@ -411,37 +580,56 @@ function updateOutOfRangeTracking() {
     if (!Array.isArray(p.oorHistory)) p.oorHistory = [];
     const out = isOutOfRange(p);
     if (out && !p.outOfRangeSince) {
-      // Just crossed OOR: start consecutive timer + open a new interval.
-      p.outOfRangeSince = now;
-      p.oorHistory.push({ start: now, end: null });
+      p.outOfRangeSince = ts;
+      p.oorHistory.push({ start: ts, end: null });
       changed = true;
     } else if (!out && p.outOfRangeSince) {
-      // Just re-entered range: clear consecutive timer + close the open interval.
       p.outOfRangeSince = null;
       const last = p.oorHistory[p.oorHistory.length - 1];
-      if (last && last.end === null) { last.end = now; changed = true; }
+      if (last && last.end === null) { last.end = ts; changed = true; }
     }
-    // Trim closed intervals that ended before the 24h cutoff.
-    const before = p.oorHistory.length;
-    p.oorHistory = p.oorHistory.filter(iv => iv.end === null || iv.end >= cutoff);
-    if (p.oorHistory.length !== before) changed = true;
   });
   return changed;
 }
-// Cumulative hours out of range over the last 24h, summing all intervals
-// (clamped to the rolling window). Bouncy positions accumulate over the day
-// even when the consecutive timer keeps resetting.
+// Cumulative hours out of range over the last 24h, from observed intervals.
+// A secondary stat, not the trigger.
+const OOR_24H_MS = 24 * 3600 * 1000;
 function outOfRange24h(p) {
   if (!Array.isArray(p.oorHistory) || p.oorHistory.length === 0) return 0;
-  const now = Date.now();
-  const cutoff = now - OOR_24H_MS;
+  const ts = Date.now();
+  const cutoff = ts - OOR_24H_MS;
   let totalMs = 0;
   p.oorHistory.forEach(iv => {
     const start = Math.max(iv.start, cutoff);
-    const end = iv.end === null ? now : iv.end;
+    const end = iv.end === null ? ts : iv.end;
     if (end > start) totalMs += end - start;
   });
   return totalMs / 3600000;
+}
+// Observed cumulative since entry — the fallback when candles are unavailable.
+// Understates by whatever happened while the tab was shut, which is exactly why
+// it is labelled rather than quietly used.
+function outOfRangeCumulativeObserved(p) {
+  if (!Array.isArray(p.oorHistory)) return 0;
+  const ts = Date.now();
+  return p.oorHistory.reduce(
+    (a, iv) => a + Math.max(0, (iv.end === null ? ts : iv.end) - iv.start), 0) / 3600000;
+}
+// RULE 50's CLOCK. Cumulative, since entry, candle-derived where possible.
+function oorCumulativeHours(p) {
+  const c = p.oorCandle;
+  if (c && Number.isFinite(c.cumulativeH)) {
+    // Add only the sliver since the series ended, and only when both ends agree
+    // the position is out. Disagreement means it crossed inside the gap; the next
+    // refresh resolves it rather than this guessing.
+    const extra = (c.endedOut && isOutOfRange(p))
+      ? Math.max(0, Date.now() - c.seriesEndMs) : 0;
+    return c.cumulativeH + extra / 3600000;
+  }
+  return outOfRangeCumulativeObserved(p);
+}
+function oorSource(p) {
+  return (p.oorCandle && Number.isFinite(p.oorCandle.cumulativeH)) ? 'candles' : 'observed';
 }
 
 function isOutOfRange(p) {
@@ -463,6 +651,13 @@ function render() {
 // Tick the out-of-range duration roughly once a minute so the timer
 // updates visibly while the tab is open.
 setInterval(() => { render(); }, 60000);
+// Re-derive rule 50's clock from candles every ten minutes, and again whenever the
+// tab comes back to the foreground, since that is exactly when the in-tab timer
+// has a gap to fill.
+setInterval(() => { refreshOorFromCandles(false).catch(()=>{}); }, OOR_CANDLE_TTL_MS);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refreshOorFromCandles(true).catch(()=>{});
+});
 
 function renderTotals() {
   const active = positions.filter(p => !p.exit);
@@ -624,14 +819,26 @@ function positionCard(p, kind) {
   const aprCls  = mature ? cls(apr) : '';
   const out = !p.exit && isOutOfRange(p);
   // Out-of-range duration: drives the yellow→red 48h badge.
-  const oorHrs = out ? outOfRangeHours(p) : 0;
-  const oorPastWait = oorHrs >= OOR_WAIT_HOURS;
+  const oorHrs = out ? outOfRangeHours(p) : 0;              // consecutive, display only
+  // Rule 50's leg fires on the CUMULATIVE clock since entry, not the consecutive
+  // one. A position that oscillates across its boundary gives up the income
+  // either way, and the consecutive reading is what rule 50 replaced on 08-24.
+  const oorCum = !p.exit ? oorCumulativeHours(p) : 0;
+  const oorSrc = oorSource(p);
+  const oorPastWait = oorCum >= OOR_WAIT_HOURS;
   const oorBadgeCls = oorPastWait ? 'badge-outrange' : 'badge-outrange-wait';
-  const oorBadgeTitle = oorPastWait
-    ? `Out of range ${fmtOutOfRangeDuration(oorHrs)} — past your ${OOR_WAIT_HOURS}h wait window. Time to rebalance.`
-    : `Out of range ${fmtOutOfRangeDuration(oorHrs)} of ${OOR_WAIT_HOURS}h wait window. Hold for now — price may re-enter.`;
+  const oorEps = p.oorCandle?.episodes || 0;
+  const oorSrcNote = oorSrc === 'candles'
+    ? ` Reconstructed from exchange candles at 5-minute resolution across ${oorEps} excursion${oorEps === 1 ? '' : 's'}, so time the tab was shut is counted.`
+      + (p.oorCandle?.coarseTail ? ` Older than ${OOR_FINE_DAYS}d is hourly, so this total is a FLOOR.` : '')
+    : ' OBSERVED IN-TAB ONLY — undercounts anything that happened while this page was closed. No candle source for this pair.';
+  const oorBadgeTitle = (oorPastWait
+    ? `Rule 50: ${fmtOutOfRangeDuration(oorCum)} out of range cumulative since entry — past the ${OOR_WAIT_HOURS}h leg. Time to act.`
+    : `Rule 50: ${fmtOutOfRangeDuration(oorCum)} of the ${OOR_WAIT_HOURS}h cumulative leg used.`)
+    + (out ? ` Currently out ${fmtOutOfRangeDuration(oorHrs)} consecutively.` : '')
+    + oorSrcNote;
   const oorBadgeLabel = out
-    ? (p.outOfRangeSince ? `⚠ Out of Range · ${fmtOutOfRangeDuration(oorHrs)}` : '⚠ Out of Range')
+    ? `⚠ Out of Range · ${fmtOutOfRangeDuration(oorCum)}${oorSrc === 'observed' ? '?' : ''}`
     : '';
   // Cumulative out-of-range stat over the last 24h — useful for bouncy
   // positions whose consecutive timer keeps resetting.
@@ -643,6 +850,13 @@ function positionCard(p, kind) {
   const oor24hStr = showOor24h
     ? `Out of range ${fmtOutOfRangeDuration(oor24h)} of last 24h (${oor24hPct.toFixed(0)}%)`
     : '';
+  // Rule 50 line, shown whenever the clock has run at all — including after price
+  // has stepped back inside, which is the case the cumulative reading exists for.
+  const showOorCum = !p.exit && oorCum >= 0.05;
+  const oorCumStr = showOorCum
+    ? `Rule 50 clock: ${fmtOutOfRangeDuration(oorCum)} of ${OOR_WAIT_HOURS}h cumulative (${(oorCum / OOR_WAIT_HOURS * 100).toFixed(0)}%) · ${oorSrc}`
+    : '';
+  const oorCumClass = oorPastWait ? 'pos-oor24h hot' : 'pos-oor24h';
   // Sanity flag: current value is more than 5x deposited — likely a data entry error.
   const suspicious = (Number(p.deposited) > 0) && (cv > p.deposited * 5);
   // Range subtitle text
@@ -709,7 +923,8 @@ function positionCard(p, kind) {
           </span>
         </div>
         ${(rangeStr || splitStr || convStr) ? `<div class="pos-subtitle">${[rangeStr, splitStr, convStr, edgeStr].filter(Boolean).join(' <span class="dot-sep">·</span> ')}</div>` : ''}
-        ${showOor24h ? `<div class="pos-subtitle ${oor24hClass}" title="Cumulative time out of range across the last 24h, including all bounces. Different from the consecutive timer in the badge.">${oor24hStr}</div>` : ''}
+        ${showOor24h ? `<div class="pos-subtitle ${oor24hClass}" title="Cumulative time out of range across the last 24h, including all bounces. A secondary stat — rule 50's leg runs off the cumulative-since-entry clock below.">${oor24hStr}</div>` : ''}
+        ${showOorCum ? `<div class="pos-subtitle ${oorCumClass}" title="${escapeHtml(oorBadgeTitle)}">${oorCumStr}</div>` : ''}
       </div>
       <div class="pos-stats">
         <div class="pos-stat"><div class="lbl">DEPOSITED</div><div class="val">${money(p.deposited)}</div></div>
